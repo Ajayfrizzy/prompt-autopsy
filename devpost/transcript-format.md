@@ -1,6 +1,6 @@
 # Prompt Autopsy Transcript Format — v1 Technical Draft
 
-Specification only; no parser has been implemented. Implements `prd.md > Import Workspace` and `Privacy Review`. This document is a normative part of the consolidated draft specification.
+Parser implemented in src/domain/transcript.ts; offline verification is recorded in checklist.md. Implements `prd.md > Import Workspace` and `Privacy Review`. This document is a normative part of the consolidated draft specification.
 
 ## Preparation
 

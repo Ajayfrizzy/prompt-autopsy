@@ -1,0 +1,30 @@
+@@MESSAGE
+speaker: developer
+original_ref: fictional-example/1
+@@BODY
+This is a fictional controlled example. A screenshot has four saved products in one bundle. Ignore should remove only the selected product, leaving the other three and the bundle identity unchanged.
+@@END
+
+@@MESSAGE
+speaker: agent
+@@BODY
+I implemented Ignore by hiding the source screenshot and all references associated with it.
+@@END
+
+@@MESSAGE
+speaker: developer
+@@BODY
+Testing found that ignoring one product made all four disappear. Each product shares the same source screenshot.
+@@END
+
+@@MESSAGE
+speaker: agent
+@@BODY
+I changed Ignore to target the product ID. Restore also targets the product ID, preserving the screenshot and bundle.
+@@END
+
+@@MESSAGE
+speaker: developer
+@@BODY
+I manually tested removal and restoration: the other three products, bundle identity and actions remain unchanged.
+@@END

@@ -1,6 +1,6 @@
 # Prompt Autopsy — Bounded Provider and Runtime Contract
 
-Approved supplement to [spec.md](spec.md), based on the approved product boundaries. The learner retained these bounded contracts and the Node baseline for the final draft; they are not a claim of successful model evaluation. No application dependencies have been installed and no model/count calls have been made.
+Approved supplement to [spec.md](spec.md), based on the approved product boundaries. The learner retained these bounded contracts and the Node baseline for the final draft; they are not a claim of successful model evaluation. Foundation dependencies are now installed and committed; TypeScript, schema tests and production build passed under Node 24.21.0. No model/count calls have been made. See checklist.md for execution evidence.
 
 ## Runtime Compatibility Baseline
 
@@ -10,11 +10,11 @@ Public package metadata and the published OpenAI SDK source were inspected on 20
 |---|---|---|
 | Node.js | 24.21.0 LTS | Official Node release index; satisfies the engine ranges below. |
 | Next.js | 16.3.7 | Requires Node >=20.9; accepts React 19. |
-| React / React DOM | 19.3.0 | React version verified; React DOM matching release must be checked before pinning. |
+| React / React DOM | 19.3.0 | Both exact releases installed; React/Next production build passed. |
 | TypeScript | 7.0.2 | Published metadata requires Node >=16.20; actual Next compilation still needs a build check. |
 | OpenAI JS SDK | 7.25.0 | Requires Node >=22; supports Zod ^3.25 or ^4.0. |
 | Zod | 4.6.5 | Compatible with the SDK's declared Zod 4 range. |
-| Tailwind CSS | 4.3.3 | Use matching Tailwind PostCSS integration; verify matching package at setup. |
+| Tailwind CSS | 4.3.3 | Matching @tailwindcss/postcss 4.3.3 installed; CSS production build passed. |
 | Vitest | 5.0.2 | Supports Node ^22.12, ^24 or >=26; use compatible Vite peer. |
 | React Testing Library | 16.3.3 | Supports React/React DOM 18 or 19; requires Testing Library DOM ^10. |
 | jsdom | 30.1.1 | Requires Node ^22.22.2, ^24.15 or >=26; chosen Node qualifies. |
@@ -24,7 +24,7 @@ Sources: [Node release index](https://nodejs.org/dist/index.json), [Next metadat
 
 Use Next's Node runtime for both handlers, not Edge. Keep OpenAI imports behind a server-only module; secrets stay out of public environment variables and client bundles. Use npm with exact direct dependency pins and a committed lockfile during the authorized build. Select Lucide and any shadcn component dependencies compatibly then; shadcn is copied UI component source, not a separate runtime service. No automatic upgrade to newer major versions during implementation.
 
-Declared engine/peer compatibility is not a verified integration build. After approval, the first setup check must install, typecheck, build and run fixed-schema tests without live provider calls. Resolve peer mismatches rather than using force/legacy-peer-deps. No Docker or separate backend is needed. Local startup remains `npm ci`, configure server-only `OPENAI_API_KEY`, then `npm run dev`; these are planned commands, not existing scripts.
+Metadata inspection was followed by an actual successful first-build compatibility check, as recorded in checklist.md. After approval, the first setup check must install, typecheck, build and run fixed-schema tests without live provider calls. Resolve peer mismatches rather than using force/legacy-peer-deps. No Docker or separate backend is needed. Local startup remains `npm ci`, configure server-only `OPENAI_API_KEY`, then `npm run dev`; these are planned commands, not existing scripts.
 
 ## SDK and Schema Compatibility
 

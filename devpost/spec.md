@@ -36,7 +36,7 @@ All provider calls share one investigation budget. If a recheck cannot complete 
 
 Learner-selected: Next.js App Router, React, TypeScript, Tailwind, shadcn/ui or comparable lightweight accessible components, Lucide, Zod, Context/useReducer, Vitest and React Testing Library. Use native browser file/download and leave-page APIs. Stateless server Route Handlers; no database, persistence, object storage, separate backend or automatic recovery.
 
-Dependency documentation: [Next.js](https://nextjs.org/docs/app), [React](https://react.dev/reference/react), [Tailwind](https://tailwindcss.com/docs), [shadcn/ui](https://ui.shadcn.com/docs), [Lucide](https://lucide.dev/guide/packages/lucide-react), [Zod](https://zod.dev/), [Vitest](https://vitest.dev/guide/), [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/). The selected Node 24.21.0 baseline and verified package metadata are recorded in [provider-contracts.md](provider-contracts.md). Engine/peer compatibility was checked from published metadata; installation/build compatibility has not been tested.
+Dependency documentation: [Next.js](https://nextjs.org/docs/app), [React](https://react.dev/reference/react), [Tailwind](https://tailwindcss.com/docs), [shadcn/ui](https://ui.shadcn.com/docs), [Lucide](https://lucide.dev/guide/packages/lucide-react), [Zod](https://zod.dev/), [Vitest](https://vitest.dev/guide/), [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/). The selected Node 24.21.0 baseline and verified package metadata are recorded in [provider-contracts.md](provider-contracts.md). Engine/peer metadata and the installed first-build environment have both been checked; TypeScript, offline schema tests and production build passed.
 
 ## Where It Runs and How Someone Tries It
 
@@ -326,7 +326,7 @@ Vitest covers parser/ID invariants, quote validation, stale responses, review/ap
 
 Recheck-specific cases: unchanged successful result permits separate approval; editing invalidates it; merging never inherits approval; late response cannot approve new wording; unknown IDs/refusal/incomplete output fail closed; duplicate/conflict routes to review; uncertain cannot approve; budget exhaustion retains text and blocks only affected proposals; explicit retry reserves again; unknown-cost timeouts remain reserved; changed comparison context cannot reuse stale conclusions. Test that no complete transcript or pre-redaction text enters a recheck payload.
 
-Limited live OpenAI checks assess schema completion, actual total token use and interpretation separately from deterministic correctness. Preserve the distinction between fixtures and real responses. technical-contracts.md maps all 21 PRD acceptance criteria to named planned tests. No tests or model calls have been run as part of writing this draft.
+Limited live OpenAI checks assess schema completion, actual total token use and interpretation separately from deterministic correctness. Preserve the distinction between fixtures and real responses. technical-contracts.md maps all 21 PRD acceptance criteria to named planned tests. The authorized build has now passed 100 offline tests; no live model or count calls were made.
 
 ## Verification Status and Final Review
 
@@ -334,12 +334,12 @@ Limited live OpenAI checks assess schema completion, actual total token use and 
 |---|---|
 | Official provider documentation, published package engines/peers and OpenAI SDK source | Read-only source verification performed; recorded in provider-contracts.md. |
 | Document links, Markdown structure, budget arithmetic and acceptance mapping | Checked during planning; these are documentation checks only. |
-| Dependency install, TypeScript checks, Next build, generated-schema checks, Vitest and RTL | Not executed. Required first-build checks after specification approval. |
+| Dependency install, TypeScript checks, Next build, generated-schema checks, Vitest and RTL | Executed under Node 24.21.0: exact install and lockfile, TypeScript and production webpack build passed; 100 offline tests passed. See checklist.md. |
 | Browser leave warnings, download fidelity and responsive UI | Not executed. Required build/manual checks; browser support limitations remain explicit. |
 | Provider account access, schema acceptance, measured prompt overhead and model quality | Not tested. No live count/generation calls made; later controlled evaluation requires authorization and resolved billing. |
 
-All 21 PRD criteria have named planned tests in technical-contracts.md. These mappings define verification work, not passing results. A successful schema check cannot establish diagnosis accuracy, and a fixture is never presented as a real provider response.
+All 21 PRD criteria have named planned tests in technical-contracts.md. Execution evidence is now recorded in checklist.md; mappings alone are not passing results. A successful schema check cannot establish diagnosis accuracy, and a fixture is never presented as a real provider response.
 
 The technical interview is consolidated. The retained choices cover the single-incident/session/file boundary, manual transcript preparation, stable IDs, privacy-reviewed baseline, full-context rechecks, deterministic decisions/exports, session-only state and the generation budget. No persistence, integrations, autonomous execution or new product questions are introduced. Manual verification remains optional and non-blocking.
 
-Recall is the demonstration candidate only if adequate original evidence is retrieved; otherwise use a clearly fictional controlled example. Installation and compatibility checks are first-build work, not additional pre-approval research blockers. The counting billing blocker is resolved as recorded at the top. This document is `approved`; implementation is authorized under the foundation-first verification sequence.
+Recall is the demonstration candidate only if adequate original evidence is retrieved; otherwise use a clearly fictional controlled example. Foundation installation and compatibility checks passed as recorded in checklist.md. The counting billing blocker is resolved as recorded at the top. This document is `approved`; implementation is authorized under the foundation-first verification sequence.
