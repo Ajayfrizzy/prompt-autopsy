@@ -1,0 +1,1 @@
+export default function Page() { return <main className="mx-auto max-w-5xl p-12"><p className="text-sky-400">PROMPT AUTOPSY</p><h1 className="mt-8 text-3xl">Investigation workspace</h1><p className="mt-4 text-slate-400">Environment verification in progress. No content is sent to a provider.</p></main>; }

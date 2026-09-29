@@ -1,0 +1,10 @@
+/devpost/learner-profile.md
+.env
+.env.*
+!.env.example
+
+node_modules/
+.next/
+coverage/
+*.tsbuildinfo
+.DS_Store
