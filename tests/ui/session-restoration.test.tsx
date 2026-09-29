@@ -18,10 +18,12 @@ afterEach(()=>{if(root){act(()=>root!.unmount());root=undefined;}container?.remo
 describe('browser form restoration cannot become phantom session data',()=>{
  it('reconciles a restored incident and transcript during actual hydration',async()=>{
   container=document.createElement('div');container.innerHTML=renderToString(<Workspace/>);document.body.append(container);
-  restored(screen.getByLabelText('Incident description'),'Restored before hydration');
+  const beforeHydration=screen.getByLabelText('Incident description');
+  restored(beforeHydration,'Restored before hydration');
   restored(screen.getByLabelText('Structured transcript'),sample);
   expect(screen.getByLabelText('Incident description')).toHaveValue('Restored before hydration');
   await act(async()=>{root=hydrateRoot(container!,<Workspace/>);});
+  expect(screen.getByLabelText('Incident description')).not.toBe(beforeHydration);
   expect(screen.getByLabelText('Incident description')).toHaveValue('');
   expect(screen.getByLabelText('Structured transcript')).toHaveValue('');
   expect(screen.getByText('0 / 2,048 bytes')).toBeInTheDocument();
@@ -29,38 +31,11 @@ describe('browser form restoration cannot become phantom session data',()=>{
   expect(screen.getByLabelText('Historical instructions filename')).toHaveTextContent('No file selected');
   expect(screen.getByRole('button',{name:/Review sensitive content/})).toBeDisabled();
  });
- it('overwrites silent restored DOM values with state on pageshow and window focus',()=>{
+ it('ordinary pageshow leaves existing React controls mounted',()=>{
   render(<Workspace/>);const incident=screen.getByLabelText('Incident description');
-  fireEvent.change(incident,{target:{value:'Item ₦'}});
-  expect(screen.getByText('8 / 2,048 bytes')).toBeInTheDocument();
-  restored(incident,'A phantom browser value');show();
+  fireEvent.change(incident,{target:{value:'Item ₦'}});show();
+  expect(screen.getByLabelText('Incident description')).toBe(incident);
   expect(incident).toHaveValue('Item ₦');expect(screen.getByText('8 / 2,048 bytes')).toBeInTheDocument();
-  restored(incident,'Another restored value');fireEvent(window,new Event('focus'));
-  expect(incident).toHaveValue('Item ₦');
-  fireEvent.click(screen.getByRole('button',{name:'incident'}));
-  expect(screen.getByText('Item ₦',{selector:'p'})).toBeInTheDocument(); // State-derived preview.
-  expect(fetch).not.toHaveBeenCalled();
- });
- it('fresh pageshow clears native file restoration without treating it as an imported source',()=>{
-  render(<Workspace/>);
-  for(const label of ['Upload transcript','Historical instructions']){
-   const input=screen.getByLabelText(label) as HTMLInputElement;
-   // Simulate native restoration independently of React, without a change event.
-   let value='C:\\fakepath\\old-file.txt';
-   Object.defineProperty(input,'value',{configurable:true,get:()=>value,set:v=>{value=v;}});
-   expect(input.value).not.toBe('');
-  }
-  restored(screen.getByLabelText('Incident description'),'Old incident');
-  restored(screen.getByLabelText('Structured transcript'),sample);show();
-  expect(screen.getByLabelText('Incident description')).toHaveValue('');
-  expect(screen.getByLabelText('Structured transcript')).toHaveValue('');
-  for(const label of ['Upload transcript','Historical instructions']){
-   expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe('');
-   expect(screen.getByLabelText(`${label} filename`)).toHaveTextContent('No file selected');
-  }
-  expect(screen.getByText('Your parsed messages will appear here.')).toBeInTheDocument();
-  expect(screen.getByRole('button',{name:/Review sensitive content/})).toBeDisabled();
-  expect(fetch).not.toHaveBeenCalled();
  });
  it('commits filenames only with valid parsed sources and clears them on invalid replacement',async()=>{
   render(<Workspace/>);fireEvent.change(screen.getByLabelText('Incident description'),{target:{value:'An incident'}});

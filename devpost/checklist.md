@@ -90,8 +90,16 @@ Open http://127.0.0.1:3000 (or run `npm run dev` under Node 24.21.0). Download t
 
 ## Hands-on Revision: Browser-Restored Phantom Inputs
 
-- Fixed the learner-reported restored incident/file values appearing against empty session state. Textareas explicitly reconcile their DOM value from state at hydration/render, pageshow and focus/visibility boundaries; autocomplete is disabled as an additional hint, not the correctness mechanism.
+- Initial fix (`5c41393`) attempted to reconcile restored incident/file values through imperative textarea writes at hydration/render and focus/visibility boundaries. The learner subsequently reported unresponsive controls in a real browser; the simulated-DOM checks did not establish browser correctness. That strategy is superseded below.
 - Transcript draft, parsed messages and accepted source filenames now commit together in reducer state. Native file pickers are cleared and their filenames are not the displayed record. Invalid replacements clear old readiness; late file reads cannot repopulate a reset session. Privacy message edits keep the paste view current without renumbering IDs.
 - Restored back/forward documents start a clean Import session. No localStorage, sessionStorage, database or recovery feature was added.
 - Verification: all 107 offline tests passed, TypeScript passed, production webpack build passed under Node 24.21.0. Seven new regression tests include actual server-render/hydration with pre-injected DOM values, simulated pageshow restoration, matching UTF-8 byte counters, valid/invalid file replacement, fresh mount/reset and late file reads. No live OpenAI call made.
 - [ ] Learner retries the original browser refresh/dev-server-restart scenario. Automated DOM lifecycle tests passed; actual browser restoration behaviour still needs the hands-on retry.
+
+## Hands-on Revision: Restore Normal React Input Interaction
+
+- Removed imperative textarea synchronization and all focus/visibility rewriting. Ordinary controlled textareas now use reducer values and change events. Import/Privacy controls remount once after hydration and on a persisted BFCache reset only.
+- Native file inputs capture the selected File and clear only inside the change handler, allowing same-file reselection. Accepted filenames still come from reducer state; atomic valid/invalid imports, stale-read guards and stable Privacy Review IDs are preserved. Transcript upload now selects its parsed-message preview.
+- Added exact `@testing-library/user-event` 14.6.1 for typing, deletion, paste, upload and same-file reselection tests, plus simulated file-picker return and BFCache checks. Retained hydration, invalid replacement and stale async-read regression coverage. No persistence or provider calls were added.
+- Verification: 110 offline tests passed across 11 files; TypeScript and production webpack build passed under Node 24.21.0. No live OpenAI calls.
+- [ ] Learner retries in a real browser: type an incident, paste/upload the sample, upload historical rules, return from the OS picker, edit Privacy Review, and refresh/restart. Confirm responsive inputs, matching counters/previews/filenames, and clean Import after session reset. jsdom success does not complete this checkpoint.
