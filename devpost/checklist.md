@@ -87,3 +87,11 @@ Foundation evidence: Node 24.21.0 archive SHA256 verified; exact npm install com
 ## Next Hands-on Review
 
 Open http://127.0.0.1:3000 (or run `npm run dev` under Node 24.21.0). Download the fictional transcript sample, upload a local AGENTS.md/CLAUDE.md and review the import/privacy layout. Live investigation requires configuring OPENAI_API_KEY and explicit in-app consent; no synthetic response is passed off as live analysis. After learner feedback, address requested fixes and complete final review/code tour before 6-ship.
+
+## Hands-on Revision: Browser-Restored Phantom Inputs
+
+- Fixed the learner-reported restored incident/file values appearing against empty session state. Textareas explicitly reconcile their DOM value from state at hydration/render, pageshow and focus/visibility boundaries; autocomplete is disabled as an additional hint, not the correctness mechanism.
+- Transcript draft, parsed messages and accepted source filenames now commit together in reducer state. Native file pickers are cleared and their filenames are not the displayed record. Invalid replacements clear old readiness; late file reads cannot repopulate a reset session. Privacy message edits keep the paste view current without renumbering IDs.
+- Restored back/forward documents start a clean Import session. No localStorage, sessionStorage, database or recovery feature was added.
+- Verification: all 107 offline tests passed, TypeScript passed, production webpack build passed under Node 24.21.0. Seven new regression tests include actual server-render/hydration with pre-injected DOM values, simulated pageshow restoration, matching UTF-8 byte counters, valid/invalid file replacement, fresh mount/reset and late file reads. No live OpenAI call made.
+- [ ] Learner retries the original browser refresh/dev-server-restart scenario. Automated DOM lifecycle tests passed; actual browser restoration behaviour still needs the hands-on retry.

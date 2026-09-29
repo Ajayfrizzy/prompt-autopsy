@@ -6,3 +6,5 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
 
 .timeline-event.active{background:#17283b;border-left-color:#8abafa}.privacy-provenance{padding:12px;border:1px solid #68573b;border-radius:6px;margin:14px 0}.privacy-provenance summary{cursor:pointer;color:#d6c092;font-size:12px}
+
+.session-file-control{position:relative;display:flex;align-items:center;gap:12px;max-width:100%;font-size:12px;color:var(--muted)}.session-file-native{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;margin:0!important}.session-file-button{background:#223147!important;color:var(--text)!important;border:1px solid #354761;padding:9px 12px;border-radius:5px;flex-shrink:0}.session-file-control:focus-within{outline:2px solid var(--accent);outline-offset:4px}.session-file-control [role=status]{overflow-wrap:anywhere}
