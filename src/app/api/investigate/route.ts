@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { validateSnapshot, segmentRules } from '@/domain/inputs';
 import { createReview } from '@/domain/review';
 import { parseAnalysisWire } from '@/server/ai/schemas';
-import { analyze, readBoundedJson, errorResponse, SafeError } from '@/server/ai/provider';
+import { analyze, readBoundedJson, errorResponse } from '@/server/ai/provider';
 import { openAIProvider } from '@/server/ai/openai';
 import { AI_CONFIG } from '@/server/config';
 export const runtime = 'nodejs';
@@ -19,9 +19,7 @@ export async function POST(request: Request) {
     validateSnapshot(body.snapshot);
     const snapshot = body.snapshot;
     const input = { investigationId: snapshot.investigationId, version: snapshot.version, incident: snapshot.incident, messages: snapshot.messages.map(({id,speaker,body})=>({id,speaker,body})), rulesText: snapshot.rulesText, rules: segmentRules(snapshot.rulesText).map(({id,start,end})=>({id,start,end})) };
-    const response = await analyze(openAIProvider(), 'investigate', input, undefined, request.signal);
-    try { createReview(parseAnalysisWire(response.result), snapshot); }
-    catch { throw new SafeError('INVALID_ANALYSIS', 'Analysis references or edit anchors did not match reviewed inputs. No findings were accepted.', true, response.usage, 502); }
+    const response = await analyze(openAIProvider(), 'investigate', input, undefined, request.signal, result => { createReview(parseAnalysisWire(result), snapshot); });
     return Response.json({ requestId, ...response }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return errorResponse(error, requestId); }
 }

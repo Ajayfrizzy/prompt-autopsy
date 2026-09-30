@@ -53,6 +53,12 @@ function checkCodePoints(value: unknown, schema: JsonSchema): void {
   if (Array.isArray(value) && schema.items) for (const item of value) checkCodePoints(item, schema.items);
   else if (value !== null && typeof value === "object" && schema.properties) for (const [name, child] of Object.entries(schema.properties)) checkCodePoints((value as Record<string, unknown>)[name], child);
 }
+export function validateWireShape(operation: 'investigate' | 'recheck', value: unknown): void {
+  const schema = operation === 'investigate' ? analysisWireSchema : semanticRecheckWireSchema;
+  const format = operation === 'investigate' ? analysisTextFormat : semanticRecheckTextFormat;
+  const parsed = schema.parse(value);
+  checkCodePoints(parsed, format.schema as JsonSchema);
+}
 function requireCondition(condition: boolean, message: string): asserts condition { if (!condition) throw new Error(message); }
 function unique(values: string[]): boolean { return new Set(values).size === values.length; }
 

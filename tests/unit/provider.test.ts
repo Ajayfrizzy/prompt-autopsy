@@ -28,15 +28,31 @@ describe('consented provider admission',()=>{
     const p=mock();vi.mocked(p.generate).mockRejectedValue(new Error('transport'));
     await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code:'GENERATION_FAILED',generationStarted:true,usage:undefined});expect(p.generate).toHaveBeenCalledTimes(1);
   });
-  it('returns trusted usage on incomplete, refused and invalid structured results',async()=>{
-    for(const output of [{status:'incomplete',output:[]},{status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]},{status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{}'}]}]}]){
-      const p=mock();vi.mocked(p.generate).mockResolvedValue({...output,usage:{input_tokens:10,output_tokens:20}});
-      await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code:'INVALID_SEMANTIC_REVIEW',generationStarted:true,usage:{inputTokens:10,outputTokens:20}});
-    }
+  it.each([
+    ['PROVIDER_INCOMPLETE',{status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[]}],
+    ['PROVIDER_REFUSED',{status:'completed',output:[{type:'message',content:[{type:'refusal',refusal:'private'}]}]}],
+    ['PROVIDER_OUTPUT_MISSING',{status:'completed',output:[]}],
+    ['PROVIDER_JSON_INVALID',{status:'completed',output:[{type:'message',content:[{type:'output_text',text:'private invalid JSON'}]}]}],
+    ['PROVIDER_SCHEMA_INVALID',{status:'completed',output:[{type:'message',content:[{type:'output_text',text:'{}'}]}]}],
+    ['PROVIDER_SCHEMA_INVALID',{status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({...valid,reasoning:'x'.repeat(501)})}]}]}],
+    ['ANALYSIS_CONTRACT_INVALID',{status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({...valid,status:'possible_conflict'})}]}]}],
+  ])('preserves usage and fails closed for %s',async(code,output)=>{
+    const p=mock();vi.mocked(p.generate).mockResolvedValue({...output,usage:{input_tokens:10,output_tokens:20}});
+    await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code,generationStarted:true,usage:{inputTokens:10,outputTokens:20}});
+    expect(p.generate).toHaveBeenCalledTimes(1);
+  });
+  it('logs only allowlisted diagnostic metadata in development',async()=>{
+    vi.stubEnv('NODE_ENV','development');const log=vi.spyOn(console,'warn').mockImplementation(()=>{});
+    try {
+      const p=mock();vi.mocked(p.generate).mockResolvedValue({status:'completed',_request_id:'req_test',usage:{input_tokens:10,output_tokens:20},output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({...valid,reasoning:42,privateSecret:'never log this'})}]}]});
+      await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code:'PROVIDER_SCHEMA_INVALID'});
+      expect(log).toHaveBeenCalledWith('Prompt Autopsy provider validation',expect.objectContaining({stage:'schema',status:'completed',refused:false,outputTextExists:true,requestId:'req_test',usage:{inputTokens:10,outputTokens:20},issues:expect.arrayContaining([{code:'invalid_type',path:['reasoning']}])}));
+      expect(JSON.stringify(log.mock.calls)).not.toMatch(/privateSecret|never log this|No issue in supplied context/);
+    } finally {log.mockRestore();vi.unstubAllEnvs();}
   });
   it('rejects unknown semantic references atomically',async()=>{
     const p=mock();vi.mocked(p.generate).mockResolvedValue({status:'completed',output:[{type:'message',content:[{type:'output_text',text:JSON.stringify({status:'possible_conflict',comparisons:[{relation:'possible_conflict',ruleIds:['R001'],proposalIds:[],reasoning:'different'}],reasoning:'Conflict',limitations:[]})}]}]});
-    await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code:'INVALID_SEMANTIC_REVIEW'});
+    await expect(analyze(p,'recheck',{})).rejects.toMatchObject({code:'ANALYSIS_CONTRACT_INVALID'});
   });
 });
 describe('bounded request parsing',()=>{

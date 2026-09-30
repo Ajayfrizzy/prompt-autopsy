@@ -7,6 +7,9 @@ export function openAIProvider(): Provider {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0 });
   return {
     count: (context, signal) => client.responses.inputTokens.count(context, { signal }),
+    // SDK 7.25 responses.parse parses before returning and can throw away access
+    // to usage on JSON/Zod failure. Keep the raw response for staged validation
+    // and trusted budget settlement; never log its contents.
     generate: (context, signal) => client.responses.create(context, { signal }),
   };
 }
