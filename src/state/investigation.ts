@@ -1,10 +1,11 @@
+import {newId} from '../domain/id';
 import {validateSnapshot, type Snapshot} from '../domain/inputs';
 import type {Review} from '../domain/review';
 import {reserve, settle, type Ledger, type Operation} from '../domain/budget';
 export type Stage = 0 | 1 | 2 | 3;
 export type ImportRecord = {transcriptText:string; transcriptFilename:string|null; rulesFilename:string|null};
 export type State = { imports:ImportRecord; stage: Stage; snapshot: Snapshot; originalRules: string; consent: boolean; review: Review|null; ledger: Ledger; active: {id:string;version:number;operation:Operation}|null; error:string; selected:string|null; downloaded:Record<string,string> };
-export function initialState(): State {return {imports:{transcriptText:'',transcriptFilename:null,rulesFilename:null},stage:0,snapshot:{investigationId:crypto.randomUUID(),version:1,incident:'',messages:[],rulesFilename:'AGENTS.md',rulesText:'',rulesBom:false},originalRules:'',consent:false,review:null,ledger:[],active:null,error:'',selected:null,downloaded:{}};}
+export function initialState(): State {return {imports:{transcriptText:'',transcriptFilename:null,rulesFilename:null},stage:0,snapshot:{investigationId:newId(),version:1,incident:'',messages:[],rulesFilename:'AGENTS.md',rulesText:'',rulesBom:false},originalRules:'',consent:false,review:null,ledger:[],active:null,error:'',selected:null,downloaded:{}};}
 export type Event = {type:'input'; patch:Partial<Snapshot>; originalRules?:string; imports?:Partial<ImportRecord>}|{type:'reset'}|{type:'consent';value:boolean}|{type:'stage';stage:Stage}|{type:'error';message:string}|{type:'start';id:string;operation:Operation}|{type:'finish';id:string;generationStarted?:boolean;usage?:{inputTokens:number;outputTokens:number};review?:Review;error?:string}|{type:'review';review:Review}|{type:'select';id:string}|{type:'download';name:string;content:string};
 export function reducer(s:State,e:Event):State {
  switch(e.type){

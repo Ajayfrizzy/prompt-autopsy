@@ -1,4 +1,5 @@
 'use client';
+import {newId} from '../domain/id';
 import {useReducer,useRef,useState,useEffect,createContext,useContext,Fragment} from 'react';
 import {ArrowRight,FileText,ShieldCheck,Search,Check,Upload,Download,ChevronLeft,AlertTriangle,Link as LinkIcon} from 'lucide-react';
 import {initialState,reducer,type Event,type State} from '../state/investigation';
@@ -31,7 +32,7 @@ export function Workspace(){
  useEffect(()=>{if(!dirty)return;const guard=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',guard);return()=>window.removeEventListener('beforeunload',guard);},[dirty]);
  const error=(e:unknown)=>send({type:'error',message:e instanceof Error?e.message:'Something went wrong. Your reviewed inputs are preserved.'});
  async function run(op:'analysis'|'recheck',body:object,apply:(result:unknown,current:State)=>Review){
-  const requestId=crypto.randomUUID();
+  const requestId=newId();
   const payload=JSON.stringify({...body,requestId});
   if(bytes(payload)>(op==='analysis'?262144:65536)){error(new Error('The encoded request exceeds the supported size. Review the inputs; no provider request was sent.'));return;}
   try{send({type:'start',id:requestId,operation:op});}catch(e){error(e);return;}
@@ -45,7 +46,7 @@ export function Workspace(){
    catch(e){send({type:'finish',id:requestId,usage:data.usage,generationStarted:data.generationStarted,error:e instanceof Error?e.message:'Invalid provider result'});}
   }catch(e){send({type:'finish',id:requestId,error:e instanceof Error?e.message:'Request failed. A generation reservation is retained because billing is unknown.'});}
  }
- function parse(text:string,filename:string|null=null){fileRequests.current.transcript++;try{const messages=parseTranscript(text);send({type:'input',patch:{messages,investigationId:crypto.randomUUID()},imports:{transcriptText:text,transcriptFilename:filename}});}catch(e){send({type:'input',patch:{messages:[]},imports:{transcriptText:text,transcriptFilename:null}});error(e);}}
+ function parse(text:string,filename:string|null=null){fileRequests.current.transcript++;try{const messages=parseTranscript(text);send({type:'input',patch:{messages,investigationId:newId()},imports:{transcriptText:text,transcriptFilename:filename}});}catch(e){send({type:'input',patch:{messages:[]},imports:{transcriptText:text,transcriptFilename:null}});error(e);}}
  async function file(file:File,kind:'transcript'|'rules'){
   const request=++fileRequests.current[kind];
   // Clear the old source while validating its replacement; no stale readiness.

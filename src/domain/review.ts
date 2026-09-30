@@ -1,10 +1,11 @@
+import {newId} from './id';
 import type { AnalysisWire, SemanticRecheckWire } from "../server/ai/schemas";
 import { segmentRules, type Snapshot } from "./inputs";
 export type Decision = "Pending" | "Approved" | "Rejected" | "No change accepted" | "Needs evidence";
 export type Edit = { version:number; start:number; end:number; expectedText:string; replacementText:string; affectedRuleIds:string[] };
 export type Proposal = { id:string; findingIds:string[]; original:AnalysisWire["proposals"][number] | null; current:Edit; decision:Decision; reason:string; history: {edit:Edit;decision:Decision;reason:string;semantic?:Proposal["semantic"]}[]; superseded:boolean; semantic:{ state:"initial"|"stale"|"pending"|"reviewed"; binding:string; result:SemanticRecheckWire|null; disposition:string } };
 export type Review = { snapshot:Snapshot; analysis:AnalysisWire; findings:{id:string;source:AnalysisWire["findings"][number];decision:Decision;reason:string}[]; proposals:Proposal[]; relations:{left:string;right:string;reason:string}[] };
-const id = () => crypto.randomUUID();
+const id = () => newId();
 function requireThat(value:unknown,message:string):asserts value { if(!value) throw new Error(message); }
 export function exactOccurrence(text:string,quote:string,occurrence:number):number { requireThat(quote.length && Number.isInteger(occurrence) && occurrence>0,"Invalid quote occurrence"); let at=-1; for(let n=0;n<occurrence;n++){ at=text.indexOf(quote,at+1); requireThat(at>=0,"Exact reviewed quote was not found"); } return at; }
 function boundary(text:string,n:number){ requireThat(Number.isInteger(n)&&n>=0&&n<=text.length,"Invalid edit boundary"); if(n>0&&n<text.length){const a=text.charCodeAt(n-1),b=text.charCodeAt(n);requireThat(!(a>=0xd800&&a<=0xdbff&&b>=0xdc00&&b<=0xdfff)&&!(a===13&&b===10),"Edit splits a Unicode character or CRLF");} }

@@ -8,7 +8,7 @@ import {Workspace} from '../../src/components/workspace';
 const sample=readFileSync('public/samples/transcript.txt','utf8');
 function file(name:string,text:string){const result=new File([text],name,{type:name.endsWith('.txt')?'text/plain':'text/markdown'});Object.defineProperty(result,'arrayBuffer',{value:async()=>new TextEncoder().encode(text).buffer});return result;}
 function windowReturn(){act(()=>{window.dispatchEvent(new Event('blur'));window.dispatchEvent(new Event('focus'));document.dispatchEvent(new Event('visibilitychange'));});}
-beforeEach(()=>vi.stubGlobal('fetch',vi.fn()));
+beforeEach(()=>{vi.stubGlobal('fetch',vi.fn());const getRandomValues=crypto.getRandomValues.bind(crypto);vi.stubGlobal('crypto',{getRandomValues});});
 afterEach(()=>{cleanup();vi.restoreAllMocks();vi.unstubAllGlobals();});
 describe('normal input interaction after the hydration remount',()=>{
  it('types, deletes and pastes without rewriting or remounting controls on focus',async()=>{
