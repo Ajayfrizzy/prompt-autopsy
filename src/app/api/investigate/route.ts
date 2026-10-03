@@ -46,11 +46,7 @@ export async function POST(request: Request) {
         body,
       })),
       rulesText: snapshot.rulesText,
-      rules: segmentRules(snapshot.rulesText).map(({ id, start, end }) => ({
-        id,
-        start,
-        end,
-      })),
+      rules: segmentRules(snapshot.rulesText),
     };
     const response = await analyze(
       openAIProvider(),

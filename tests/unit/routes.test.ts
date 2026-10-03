@@ -268,3 +268,142 @@ describe("stateless route contracts", () => {
     });
   });
 });
+
+// Controlled outputs exercise actual request construction and strict validation.
+import {
+  historicalRulesSnapshot,
+  historicalRulesAnalysis,
+} from "../fixtures/historical-rules";
+describe("historical passage context and exact anchors (offline)", () => {
+  it.each([undefined, "end_of_file", "before", "after", "replace"] as const)(
+    "accepts exact citations and %s edits with explicit passage context",
+    async (placement) => {
+      mocks.generate.mockResolvedValue(
+        output(historicalRulesAnalysis(placement)),
+      );
+      const response = await investigate(
+        request({
+          requestId: uuid(),
+          snapshot: historicalRulesSnapshot,
+          consent: true,
+        }),
+      );
+      expect(response.status).toBe(200);
+      const counted = mocks.count.mock.calls[0][0];
+      const generated = mocks.generate.mock.calls[0][0];
+      expect(generated.input).toBe(counted.input);
+      const input = JSON.parse(counted.input);
+      expect(input.rulesText).toBe(historicalRulesSnapshot.rulesText);
+      expect(input.rules).toEqual(segmentRules(input.rulesText));
+      expect(input.rules).toHaveLength(3);
+      expect(input.rules.map((r: { id: string }) => r.id)).toEqual([
+        "R001",
+        "R002",
+        "R003",
+      ]);
+      for (const r of input.rules)
+        expect(r.text).toBe(input.rulesText.slice(r.start, r.end));
+    },
+  );
+  it.each([
+    [
+      "UNKNOWN_RULE_REFERENCE",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.findings[0].comparisons[0].rules[0].ruleId = "R999";
+      },
+    ],
+    [
+      "EVIDENCE_QUOTE_MISMATCH",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.findings[0].comparisons[0].rules[0].ruleId = "R001";
+      },
+    ],
+    [
+      "UNKNOWN_MESSAGE_REFERENCE",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.findings[0].observations[0].evidence[0].messageId = "M999";
+      },
+    ],
+    [
+      "EVIDENCE_QUOTE_MISMATCH",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.findings[0].observations[0].evidence[0].quote = "private paraphrase";
+      },
+    ],
+    [
+      "EDIT_RULE_REFERENCE_INVALID",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.proposals[0].target.ruleId = "R999";
+      },
+    ],
+    [
+      "EVIDENCE_QUOTE_MISMATCH",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.proposals[0].target.quote = "private invented anchor";
+      },
+    ],
+    [
+      "EDIT_ANCHOR_INVALID",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.proposals[0].target.quote = null;
+      },
+    ],
+    [
+      "PROPOSAL_REFERENCE_INVALID",
+      (a: ReturnType<typeof historicalRulesAnalysis>) => {
+        a.findings[0].proposalKey = "unknown";
+      },
+    ],
+  ])(
+    "rejects with safe %s metadata and retains usage",
+    async (category, mutate) => {
+      vi.stubEnv("NODE_ENV", "development");
+      const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const fixture = historicalRulesAnalysis("replace");
+        mutate(fixture);
+        mocks.generate.mockResolvedValue(output(fixture));
+        const response = await investigate(
+          request({
+            requestId: uuid(),
+            snapshot: historicalRulesSnapshot,
+            consent: true,
+          }),
+        );
+        expect(response.status).toBe(502);
+        expect(await response.json()).toMatchObject({
+          code: "ANALYSIS_CONTRACT_INVALID",
+          usage: { inputTokens: 100, outputTokens: 120 },
+        });
+        expect(log).toHaveBeenCalledWith(
+          "Prompt Autopsy provider validation",
+          expect.objectContaining({
+            stage: "domain",
+            domainCategory: category,
+          }),
+        );
+        expect(JSON.stringify(log.mock.calls)).not.toMatch(
+          /private|Grouped actions|fictional controlled/,
+        );
+        expect(mocks.generate).toHaveBeenCalledTimes(1);
+      } finally {
+        log.mockRestore();
+      }
+    },
+  );
+  it("rejects the expanded complete context at the existing token gate without generation", async () => {
+    mocks.count.mockResolvedValue({ input_tokens: 33334 });
+    const response = await investigate(
+      request({
+        requestId: uuid(),
+        snapshot: historicalRulesSnapshot,
+        consent: true,
+      }),
+    );
+    expect(response.status).toBe(413);
+    expect(mocks.generate).not.toHaveBeenCalled();
+    expect(JSON.parse(mocks.count.mock.calls[0][0].input).rules).toEqual(
+      segmentRules(historicalRulesSnapshot.rulesText),
+    );
+  });
+});

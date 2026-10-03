@@ -1,3 +1,4 @@
+import { domainValidationCategory } from "../../domain/validation-category";
 import { z } from "zod";
 import type { InputTokenCountParams } from "openai/resources/responses/input-tokens";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
@@ -207,6 +208,8 @@ export async function analyze(
         .safeParse(response._request_id);
       console.warn("Prompt Autopsy provider validation", {
         stage,
+        domainCategory:
+          stage === "domain" ? domainValidationCategory(error) : undefined,
         status: status.success ? status.data : "unknown",
         incompleteReason: reason.success ? reason.data.reason : undefined,
         refused,
@@ -285,11 +288,12 @@ export async function analyze(
         : parseSemanticRecheckWire(parsed, references);
     validateDomain?.(result);
     return { result, usage, generationStarted: true as const };
-  } catch {
+  } catch (error) {
     return fail(
       "domain",
       "ANALYSIS_CONTRACT_INVALID",
       "The structured response was valid JSON but failed Prompt Autopsy's evidence/proposal consistency checks.",
+      error,
     );
   }
 }
