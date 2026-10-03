@@ -1,20 +1,251 @@
-import { describe,it,expect } from 'vitest';
-import { createReview,decideProposal,editProposal,exportPlan,applySemanticResult,semanticContext,mergeProposals,exactOccurrence,decideFinding,reviewConflicts } from '../../src/domain/review';
-import { generateReport } from '../../src/domain/report';
-import type { Snapshot } from '../../src/domain/inputs';
-import type { AnalysisWire } from '../../src/server/ai/schemas';
-const snapshot:Snapshot={investigationId:crypto.randomUUID(),version:1,incident:'One item removed siblings',messages:[{id:'M001',speaker:'developer',body:'Keep siblings.'}],rulesFilename:'AGENTS.md',rulesText:'Keep logs.\r\n\r\nUse types.\r\n',rulesBom:false};
-function fixture():AnalysisWire{return {summary:'A controlled fictional finding',coverage:{status:'within_capacity',reason:null},findings:[{key:'f',title:'Scope confusion',evidenceState:'supported',observations:[{text:'Siblings must remain',evidence:[{messageId:'M001',quote:'Keep siblings.',occurrence:1}]}],documentedRequirement:null,hypotheses:[],missingEvidence:[],comparisons:[],recommendation:'edit',rationale:'Clarify scope',proposalKey:'p'}],timeline:[],proposals:[{key:'p',findingKeys:['f'],rationale:'Clarify',operation:'replace',target:{ruleId:'R001',quote:'Keep logs.',occurrence:1,placement:'replace'},replacementText:'Keep logs and siblings.'}],proposalRelations:[],limitations:[]};}
-describe('reviewed baseline enforcement',()=>{
- it('requires exact surviving citations and resolves overlapping occurrences',()=>{expect(exactOccurrence('aaaa','aa',3)).toBe(2);const a=fixture();a.findings[0].observations[0].evidence[0].messageId='M004';expect(()=>createReview(a,snapshot)).toThrow('Unknown');});
- it('exports approved edits and preserves unrelated CRLF text exactly',()=>{let r=createReview(fixture(),snapshot);expect(exportPlan(r).text).toBe(snapshot.rulesText);r=decideProposal(r,r.proposals[0].id,'Approved');expect(exportPlan(r).text).toBe('Keep logs and siblings.\r\n\r\nUse types.\r\n');});
- it('revokes edited approval until a current semantic recheck',()=>{let r=createReview(fixture(),snapshot);const id=r.proposals[0].id;r=decideProposal(r,id,'Approved');r=editProposal(r,id,'Preserve other items.');expect(()=>decideProposal(r,id,'Approved')).toThrow('Stale');const {binding}=semanticContext(r,id);r=applySemanticResult(r,id,binding,{status:'no_issue',comparisons:[],reasoning:'No issue identified in supplied context',limitations:[]});r=decideProposal(r,id,'Approved');expect(exportPlan(r).eligible).toHaveLength(1);r=editProposal(r,id,'Preserve unrelated items.');expect(()=>applySemanticResult(r,id,binding,{status:'no_issue',comparisons:[],reasoning:'Old',limitations:[]})).toThrow('stale');});
- it('blocks same-passage approved changes and creates an unapproved merged revision',()=>{const a=fixture();a.findings.push({...a.findings[0],key:'f2',proposalKey:'p2'});a.proposals.push({...a.proposals[0],key:'p2',findingKeys:['f2'],replacementText:'Keep all logs.'});let r=createReview(a,snapshot);for(const p of r.proposals)r=decideProposal(r,p.id,'Approved');expect(exportPlan(r).eligible).toHaveLength(0);expect(exportPlan(r).conflicts).toHaveLength(1);r=mergeProposals(r,r.proposals.map(p=>p.id),'Preserve logs and other items.');expect(r.proposals.at(-1)?.semantic.state).toBe('stale');expect(exportPlan(r).eligible).toHaveLength(0);});
- it('supports no-change report without inventing a rules revision or leaking original content',()=>{const a=fixture();a.proposals=[];a.findings[0].proposalKey=null;a.findings[0].recommendation='no_change';let r=createReview(a,snapshot);r=decideFinding(r,r.findings[0].id,'No change accepted');expect(exportPlan(r).eligible).toHaveLength(0);expect(generateReport(r,{privacyRedacted:true})).toContain('privacy-reviewed/redacted baseline');expect(generateReport(r)).toContain('No change accepted');});
- it('new approved peers stale targeted coverage without blocking independent original changes',()=>{const a=fixture();a.findings.push({...a.findings[0],key:'f2',proposalKey:'p2'});a.proposals.push({...a.proposals[0],key:'p2',findingKeys:['f2'],target:{ruleId:'R002',quote:'Use types.',occurrence:1,placement:'replace'},replacementText:'Use strict types.'});let r=createReview(a,snapshot);const [first,second]=r.proposals.map(p=>p.id);r=editProposal(r,first,'Preserve logs.');r=applySemanticResult(r,first,semanticContext(r,first).binding,{status:'no_issue',comparisons:[],reasoning:'No issue',limitations:[]});r=decideProposal(r,first,'Approved');r=decideProposal(r,second,'Approved');expect(exportPlan(r).eligible.map(p=>p.id)).toEqual([second]);expect(exportPlan(r).excluded[0].reason).toContain('context changed');});
- it('reports hostile Markdown as inert text with fences longer than source delimiters',()=>{const a=fixture();a.summary='<script>alert(1)</script> [open](https://example.com)';a.proposals[0].replacementText='```\n<img src=x>\n```';const report=generateReport(createReview(a,snapshot));expect(report).toContain('\\<script\\>');expect(report).toContain('````text');expect(report).not.toContain('[open](https://example.com)');});
- it('shows a pending targeted conflict without excluding its approved peer',()=>{const a=fixture();a.findings.push({...a.findings[0],key:'f2',proposalKey:'p2'});a.proposals.push({...a.proposals[0],key:'p2',findingKeys:['f2'],target:{ruleId:'R002',quote:'Use types.',occurrence:1,placement:'replace'},replacementText:'Use strict types.'});let r=createReview(a,snapshot);const [first,second]=r.proposals.map(p=>p.id);r=decideProposal(r,second,'Approved');r=editProposal(r,first,'Preserve logs.');r=applySemanticResult(r,first,semanticContext(r,first).binding,{status:'possible_conflict',comparisons:[{relation:'possible_conflict',ruleIds:[],proposalIds:[second],reasoning:'Contradictory instruction scope'}],reasoning:'Review required',limitations:[]});expect(reviewConflicts(r)).toEqual([{left:first,right:second,reason:'Contradictory instruction scope'}]);expect(exportPlan(r).eligible.map(p=>p.id)).toEqual([second]);expect(exportPlan(r).conflicts).toHaveLength(0);});
- it('includes reviewed incident and the exact approval disclaimer',()=>{const report=generateReport(createReview(fixture(),snapshot));expect(report).toContain(snapshot.incident);expect(report).toContain('Approval means the developer accepted this instruction change for export. It does not establish that the instruction prevents recurrence of the original failure.');});
- it('empty draft invalidates approval without retaining export eligibility',()=>{let r=createReview(fixture(),snapshot);const id=r.proposals[0].id;r=decideProposal(r,id,'Approved');r=editProposal(r,id,'');expect(r.proposals[0].decision).toBe('Pending');expect(exportPlan(r).eligible).toHaveLength(0);expect(()=>semanticContext(r,id)).toThrow('Replacement');});
- it('requires reasons for rejection and blocks uncertain rechecks',()=>{let r=createReview(fixture(),snapshot);const id=r.proposals[0].id;expect(()=>decideProposal(r,id,'Rejected')).toThrow('reason');r=editProposal(r,id,'Preserve items.');r=applySemanticResult(r,id,semanticContext(r,id).binding,{status:'uncertain',comparisons:[],reasoning:'Missing context',limitations:[]});expect(()=>decideProposal(r,id,'Approved')).toThrow('uncertain');});
+import { describe, it, expect } from "vitest";
+import {
+  createReview,
+  decideProposal,
+  editProposal,
+  exportPlan,
+  applySemanticResult,
+  semanticContext,
+  mergeProposals,
+  exactOccurrence,
+  decideFinding,
+  reviewConflicts,
+} from "../../src/domain/review";
+import { generateReport } from "../../src/domain/report";
+import type { Snapshot } from "../../src/domain/inputs";
+import type { AnalysisWire } from "../../src/server/ai/schemas";
+const snapshot: Snapshot = {
+  investigationId: crypto.randomUUID(),
+  version: 1,
+  incident: "One item removed siblings",
+  messages: [{ id: "M001", speaker: "developer", body: "Keep siblings." }],
+  rulesFilename: "AGENTS.md",
+  rulesText: "Keep logs.\r\n\r\nUse types.\r\n",
+  rulesBom: false,
+};
+function fixture(): AnalysisWire {
+  return {
+    summary: "A controlled fictional finding",
+    coverage: { status: "within_capacity", reason: null },
+    findings: [
+      {
+        key: "f",
+        title: "Scope confusion",
+        evidenceState: "supported",
+        observations: [
+          {
+            text: "Siblings must remain",
+            evidence: [
+              { messageId: "M001", quote: "Keep siblings.", occurrence: 1 },
+            ],
+          },
+        ],
+        documentedRequirement: null,
+        hypotheses: [],
+        missingEvidence: [],
+        comparisons: [],
+        recommendation: "edit",
+        rationale: "Clarify scope",
+        proposalKey: "p",
+      },
+    ],
+    timeline: [],
+    proposals: [
+      {
+        key: "p",
+        findingKeys: ["f"],
+        rationale: "Clarify",
+        operation: "replace",
+        target: {
+          ruleId: "R001",
+          quote: "Keep logs.",
+          occurrence: 1,
+          placement: "replace",
+        },
+        replacementText: "Keep logs and siblings.",
+      },
+    ],
+    proposalRelations: [],
+    limitations: [],
+  };
+}
+describe("reviewed baseline enforcement", () => {
+  it("requires exact surviving citations and resolves overlapping occurrences", () => {
+    expect(exactOccurrence("aaaa", "aa", 3)).toBe(2);
+    const a = fixture();
+    a.findings[0].observations[0].evidence[0].messageId = "M004";
+    expect(() => createReview(a, snapshot)).toThrow("Unknown");
+  });
+  it("exports approved edits and preserves unrelated CRLF text exactly", () => {
+    let r = createReview(fixture(), snapshot);
+    expect(exportPlan(r).text).toBe(snapshot.rulesText);
+    r = decideProposal(r, r.proposals[0].id, "Approved");
+    expect(exportPlan(r).text).toBe(
+      "Keep logs and siblings.\r\n\r\nUse types.\r\n",
+    );
+  });
+  it("revokes edited approval until a current semantic recheck", () => {
+    let r = createReview(fixture(), snapshot);
+    const id = r.proposals[0].id;
+    r = decideProposal(r, id, "Approved");
+    r = editProposal(r, id, "Preserve other items.");
+    expect(() => decideProposal(r, id, "Approved")).toThrow("Stale");
+    const { binding } = semanticContext(r, id);
+    r = applySemanticResult(r, id, binding, {
+      status: "no_issue",
+      comparisons: [],
+      reasoning: "No issue identified in supplied context",
+      limitations: [],
+    });
+    r = decideProposal(r, id, "Approved");
+    expect(exportPlan(r).eligible).toHaveLength(1);
+    r = editProposal(r, id, "Preserve unrelated items.");
+    expect(() =>
+      applySemanticResult(r, id, binding, {
+        status: "no_issue",
+        comparisons: [],
+        reasoning: "Old",
+        limitations: [],
+      }),
+    ).toThrow("stale");
+  });
+  it("blocks same-passage approved changes and creates an unapproved merged revision", () => {
+    const a = fixture();
+    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.proposals.push({
+      ...a.proposals[0],
+      key: "p2",
+      findingKeys: ["f2"],
+      replacementText: "Keep all logs.",
+    });
+    let r = createReview(a, snapshot);
+    for (const p of r.proposals) r = decideProposal(r, p.id, "Approved");
+    expect(exportPlan(r).eligible).toHaveLength(0);
+    expect(exportPlan(r).conflicts).toHaveLength(1);
+    r = mergeProposals(
+      r,
+      r.proposals.map((p) => p.id),
+      "Preserve logs and other items.",
+    );
+    expect(r.proposals.at(-1)?.semantic.state).toBe("stale");
+    expect(exportPlan(r).eligible).toHaveLength(0);
+  });
+  it("supports no-change report without inventing a rules revision or leaking original content", () => {
+    const a = fixture();
+    a.proposals = [];
+    a.findings[0].proposalKey = null;
+    a.findings[0].recommendation = "no_change";
+    let r = createReview(a, snapshot);
+    r = decideFinding(r, r.findings[0].id, "No change accepted");
+    expect(exportPlan(r).eligible).toHaveLength(0);
+    expect(generateReport(r, { privacyRedacted: true })).toContain(
+      "privacy-reviewed/redacted baseline",
+    );
+    expect(generateReport(r)).toContain("No change accepted");
+  });
+  it("new approved peers stale targeted coverage without blocking independent original changes", () => {
+    const a = fixture();
+    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.proposals.push({
+      ...a.proposals[0],
+      key: "p2",
+      findingKeys: ["f2"],
+      target: {
+        ruleId: "R002",
+        quote: "Use types.",
+        occurrence: 1,
+        placement: "replace",
+      },
+      replacementText: "Use strict types.",
+    });
+    let r = createReview(a, snapshot);
+    const [first, second] = r.proposals.map((p) => p.id);
+    r = editProposal(r, first, "Preserve logs.");
+    r = applySemanticResult(r, first, semanticContext(r, first).binding, {
+      status: "no_issue",
+      comparisons: [],
+      reasoning: "No issue",
+      limitations: [],
+    });
+    r = decideProposal(r, first, "Approved");
+    r = decideProposal(r, second, "Approved");
+    expect(exportPlan(r).eligible.map((p) => p.id)).toEqual([second]);
+    expect(exportPlan(r).excluded[0].reason).toContain("context changed");
+  });
+  it("reports hostile Markdown as inert text with fences longer than source delimiters", () => {
+    const a = fixture();
+    a.summary = "<script>alert(1)</script> [open](https://example.com)";
+    a.proposals[0].replacementText = "```\n<img src=x>\n```";
+    const report = generateReport(createReview(a, snapshot));
+    expect(report).toContain("\\<script\\>");
+    expect(report).toContain("````text");
+    expect(report).not.toContain("[open](https://example.com)");
+  });
+  it("shows a pending targeted conflict without excluding its approved peer", () => {
+    const a = fixture();
+    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.proposals.push({
+      ...a.proposals[0],
+      key: "p2",
+      findingKeys: ["f2"],
+      target: {
+        ruleId: "R002",
+        quote: "Use types.",
+        occurrence: 1,
+        placement: "replace",
+      },
+      replacementText: "Use strict types.",
+    });
+    let r = createReview(a, snapshot);
+    const [first, second] = r.proposals.map((p) => p.id);
+    r = decideProposal(r, second, "Approved");
+    r = editProposal(r, first, "Preserve logs.");
+    r = applySemanticResult(r, first, semanticContext(r, first).binding, {
+      status: "possible_conflict",
+      comparisons: [
+        {
+          relation: "possible_conflict",
+          ruleIds: [],
+          proposalIds: [second],
+          reasoning: "Contradictory instruction scope",
+        },
+      ],
+      reasoning: "Review required",
+      limitations: [],
+    });
+    expect(reviewConflicts(r)).toEqual([
+      { left: first, right: second, reason: "Contradictory instruction scope" },
+    ]);
+    expect(exportPlan(r).eligible.map((p) => p.id)).toEqual([second]);
+    expect(exportPlan(r).conflicts).toHaveLength(0);
+  });
+  it("includes reviewed incident and the exact approval disclaimer", () => {
+    const report = generateReport(createReview(fixture(), snapshot));
+    expect(report).toContain(snapshot.incident);
+    expect(report).toContain(
+      "Approval means the developer accepted this instruction change for export. It does not establish that the instruction prevents recurrence of the original failure.",
+    );
+  });
+  it("empty draft invalidates approval without retaining export eligibility", () => {
+    let r = createReview(fixture(), snapshot);
+    const id = r.proposals[0].id;
+    r = decideProposal(r, id, "Approved");
+    r = editProposal(r, id, "");
+    expect(r.proposals[0].decision).toBe("Pending");
+    expect(exportPlan(r).eligible).toHaveLength(0);
+    expect(() => semanticContext(r, id)).toThrow("Replacement");
+  });
+  it("requires reasons for rejection and blocks uncertain rechecks", () => {
+    let r = createReview(fixture(), snapshot);
+    const id = r.proposals[0].id;
+    expect(() => decideProposal(r, id, "Rejected")).toThrow("reason");
+    r = editProposal(r, id, "Preserve items.");
+    r = applySemanticResult(r, id, semanticContext(r, id).binding, {
+      status: "uncertain",
+      comparisons: [],
+      reasoning: "Missing context",
+      limitations: [],
+    });
+    expect(() => decideProposal(r, id, "Approved")).toThrow("uncertain");
+  });
 });

@@ -1,10 +1,175 @@
 import { diffLines } from "diff";
 import { exportPlan, type Review } from "./review";
 // Fence source strings so imported Markdown/HTML is inert in the exported report.
-function block(text:string){const runs=text.match(/`+/g)||[];const fence="`".repeat(Math.max(3,...runs.map(r=>r.length+1)));return `${fence}text\n${text}\n${fence}`;}
-function safe(text:string){return text.replace(/[\\`*_{}[\]()<>#!|]/g,"\\$&").replace(/\r?\n/g," ");}
-export function rulesDiff(review:Review){return diffLines(review.snapshot.rulesText,exportPlan(review).text);}
-export function generateReport(review:Review,options:{privacyRedacted?:boolean}={}){const plan=exportPlan(review);const unresolved=review.findings.some(f=>{const p=review.proposals.filter(p=>p.findingIds.includes(f.id)&&!p.superseded);return p.length?p.some(p=>plan.excluded.some(e=>e.proposal.id===p.id&&!["Rejected","No change accepted"].includes(e.reason))):["Pending","Needs evidence"].includes(f.decision);});const lines=["# Prompt Autopsy investigation report","",unresolved?"Export completed with unresolved findings.":"Reviewed investigation export. Approval is not verification.","",safe(review.analysis.summary),"",`Coverage: ${safe(review.analysis.coverage.status)}${review.analysis.coverage.reason?` — ${safe(review.analysis.coverage.reason)}`:""}.`,"","Findings are interpretations of supplied evidence. No instruction is guaranteed to prevent recurrence or be followed.","","Approval means the developer accepted this instruction change for export. It does not establish that the instruction prevents recurrence of the original failure.","","## Incident description",block(review.snapshot.incident),"","Uploading historical instructions does not establish that the coding agent loaded or followed them.",""];
- if(options.privacyRedacted)lines.push("The exported rules derive from the privacy-reviewed/redacted baseline. Privacy redactions are developer edits, not approved Prompt Autopsy instruction changes. Removed sensitive text is not reproduced.","");
- for(const f of review.findings){const proposals=review.proposals.filter(p=>p.findingIds.includes(f.id));lines.push(`## ${safe(f.source.title)}`,`Finding ID: ${f.id}`,`Evidence: ${f.source.evidenceState}`,`Decision: ${proposals.filter(p=>!p.superseded).map(p=>p.decision).join(", ")||f.decision}`,safe(f.reason||f.source.rationale),"","### Observations");for(const o of f.source.observations){lines.push(safe(o.text));for(const e of o.evidence)lines.push(`Message ${e.messageId}, occurrence ${e.occurrence}:`,block(e.quote));}if(f.source.documentedRequirement){lines.push("### Documented requirement",safe(f.source.documentedRequirement.text));for(const e of f.source.documentedRequirement.evidence)lines.push(`Message ${e.messageId}:`,block(e.quote));}lines.push("### Possible explanations");for(const h of f.source.hypotheses){lines.push(safe(h.text),`Limitation: ${safe(h.limitation)}`);for(const e of h.supportingEvidence)lines.push(`Message ${e.messageId}:`,block(e.quote));}for(const missing of f.source.missingEvidence)lines.push(`Missing evidence: ${safe(missing)}`);for(const c of f.source.comparisons){lines.push(`Historical comparison: ${safe(c.relation)} — ${safe(c.reasoning)}`);for(const r of c.rules)lines.push(`Rule ${r.ruleId}:`,block(r.quote));}for(const p of proposals){const exclusion=plan.excluded.find(e=>e.proposal.id===p.id);lines.push("### Proposal",`ID: ${p.id}; version: ${p.current.version}`,`Export: ${exclusion?safe(exclusion.reason):"Included"}`,block(p.current.replacementText),`Developer reason: ${safe(p.reason||"None recorded")}`);if(p.original&&p.original.replacementText!==p.current.replacementText)lines.push("Original AI wording:",block(p.original.replacementText));for(const h of p.history)lines.push(`Prior version ${h.edit.version}; ${h.decision}`,block(h.edit.replacementText),safe(h.reason),...(h.semantic?.result?[`Prior semantic review: ${h.semantic.result.status}`,safe(h.semantic.result.reasoning)]:[]));if(p.semantic.result)lines.push(`Semantic review: ${p.semantic.result.status}`,safe(p.semantic.result.reasoning),...p.semantic.result.comparisons.map(c=>`${c.relation}; rules: ${c.ruleIds.join(", ")||"none"}; proposals: ${c.proposalIds.join(", ")||"none"}; ${safe(c.reasoning)}`),...p.semantic.result.limitations.map(safe));if(p.semantic.disposition)lines.push(`Developer semantic disposition: ${safe(p.semantic.disposition)}`);}lines.push("");}
- lines.push("## Recorded initial semantic relations");for(const relation of review.relations){const left=review.proposals.find(p=>p.id===relation.left),right=review.proposals.find(p=>p.id===relation.right);lines.push(`${relation.left} / ${relation.right}: ${safe(relation.reason)}`,`Current decisions: ${left?.decision??"Unknown"} / ${right?.decision??"Unknown"}`,`Resolution notes: ${safe(left?.reason||"None")} / ${safe(right?.reason||"None")}`);}lines.push("## Conflicts");for(const c of plan.conflicts)lines.push(`${c.left} / ${c.right}: ${safe(c.reason)}`);lines.push("## Not included");for(const e of plan.excluded)lines.push(`${e.proposal.id}: ${safe(e.reason)}`);lines.push("## Limitations",...review.analysis.limitations.map(safe),"","Optional manual verification was not performed by this application.","");return lines.join("\n");}
+function block(text: string) {
+  const runs = text.match(/`+/g) || [];
+  const fence = "`".repeat(Math.max(3, ...runs.map((r) => r.length + 1)));
+  return `${fence}text\n${text}\n${fence}`;
+}
+function safe(text: string) {
+  return text.replace(/[\\`*_{}[\]()<>#!|]/g, "\\$&").replace(/\r?\n/g, " ");
+}
+export function rulesDiff(review: Review) {
+  return diffLines(review.snapshot.rulesText, exportPlan(review).text);
+}
+export function generateReport(
+  review: Review,
+  options: { privacyRedacted?: boolean } = {},
+) {
+  const plan = exportPlan(review);
+  const unresolved = review.findings.some((f) => {
+    const p = review.proposals.filter(
+      (p) => p.findingIds.includes(f.id) && !p.superseded,
+    );
+    return p.length
+      ? p.some((p) =>
+          plan.excluded.some(
+            (e) =>
+              e.proposal.id === p.id &&
+              !["Rejected", "No change accepted"].includes(e.reason),
+          ),
+        )
+      : ["Pending", "Needs evidence"].includes(f.decision);
+  });
+  const lines = [
+    "# Prompt Autopsy investigation report",
+    "",
+    unresolved
+      ? "Export completed with unresolved findings."
+      : "Reviewed investigation export. Approval is not verification.",
+    "",
+    safe(review.analysis.summary),
+    "",
+    `Coverage: ${safe(review.analysis.coverage.status)}${review.analysis.coverage.reason ? ` — ${safe(review.analysis.coverage.reason)}` : ""}.`,
+    "",
+    "Findings are interpretations of supplied evidence. No instruction is guaranteed to prevent recurrence or be followed.",
+    "",
+    "Approval means the developer accepted this instruction change for export. It does not establish that the instruction prevents recurrence of the original failure.",
+    "",
+    "## Incident description",
+    block(review.snapshot.incident),
+    "",
+    "Uploading historical instructions does not establish that the coding agent loaded or followed them.",
+    "",
+  ];
+  if (options.privacyRedacted)
+    lines.push(
+      "The exported rules derive from the privacy-reviewed/redacted baseline. Privacy redactions are developer edits, not approved Prompt Autopsy instruction changes. Removed sensitive text is not reproduced.",
+      "",
+    );
+  for (const f of review.findings) {
+    const proposals = review.proposals.filter((p) =>
+      p.findingIds.includes(f.id),
+    );
+    lines.push(
+      `## ${safe(f.source.title)}`,
+      `Finding ID: ${f.id}`,
+      `Evidence: ${f.source.evidenceState}`,
+      `Decision: ${
+        proposals
+          .filter((p) => !p.superseded)
+          .map((p) => p.decision)
+          .join(", ") || f.decision
+      }`,
+      safe(f.reason || f.source.rationale),
+      "",
+      "### Observations",
+    );
+    for (const o of f.source.observations) {
+      lines.push(safe(o.text));
+      for (const e of o.evidence)
+        lines.push(
+          `Message ${e.messageId}, occurrence ${e.occurrence}:`,
+          block(e.quote),
+        );
+    }
+    if (f.source.documentedRequirement) {
+      lines.push(
+        "### Documented requirement",
+        safe(f.source.documentedRequirement.text),
+      );
+      for (const e of f.source.documentedRequirement.evidence)
+        lines.push(`Message ${e.messageId}:`, block(e.quote));
+    }
+    lines.push("### Possible explanations");
+    for (const h of f.source.hypotheses) {
+      lines.push(safe(h.text), `Limitation: ${safe(h.limitation)}`);
+      for (const e of h.supportingEvidence)
+        lines.push(`Message ${e.messageId}:`, block(e.quote));
+    }
+    for (const missing of f.source.missingEvidence)
+      lines.push(`Missing evidence: ${safe(missing)}`);
+    for (const c of f.source.comparisons) {
+      lines.push(
+        `Historical comparison: ${safe(c.relation)} — ${safe(c.reasoning)}`,
+      );
+      for (const r of c.rules) lines.push(`Rule ${r.ruleId}:`, block(r.quote));
+    }
+    for (const p of proposals) {
+      const exclusion = plan.excluded.find((e) => e.proposal.id === p.id);
+      lines.push(
+        "### Proposal",
+        `ID: ${p.id}; version: ${p.current.version}`,
+        `Export: ${exclusion ? safe(exclusion.reason) : "Included"}`,
+        block(p.current.replacementText),
+        `Developer reason: ${safe(p.reason || "None recorded")}`,
+      );
+      if (
+        p.original &&
+        p.original.replacementText !== p.current.replacementText
+      )
+        lines.push("Original AI wording:", block(p.original.replacementText));
+      for (const h of p.history)
+        lines.push(
+          `Prior version ${h.edit.version}; ${h.decision}`,
+          block(h.edit.replacementText),
+          safe(h.reason),
+          ...(h.semantic?.result
+            ? [
+                `Prior semantic review: ${h.semantic.result.status}`,
+                safe(h.semantic.result.reasoning),
+              ]
+            : []),
+        );
+      if (p.semantic.result)
+        lines.push(
+          `Semantic review: ${p.semantic.result.status}`,
+          safe(p.semantic.result.reasoning),
+          ...p.semantic.result.comparisons.map(
+            (c) =>
+              `${c.relation}; rules: ${c.ruleIds.join(", ") || "none"}; proposals: ${c.proposalIds.join(", ") || "none"}; ${safe(c.reasoning)}`,
+          ),
+          ...p.semantic.result.limitations.map(safe),
+        );
+      if (p.semantic.disposition)
+        lines.push(
+          `Developer semantic disposition: ${safe(p.semantic.disposition)}`,
+        );
+    }
+    lines.push("");
+  }
+  lines.push("## Recorded initial semantic relations");
+  for (const relation of review.relations) {
+    const left = review.proposals.find((p) => p.id === relation.left),
+      right = review.proposals.find((p) => p.id === relation.right);
+    lines.push(
+      `${relation.left} / ${relation.right}: ${safe(relation.reason)}`,
+      `Current decisions: ${left?.decision ?? "Unknown"} / ${right?.decision ?? "Unknown"}`,
+      `Resolution notes: ${safe(left?.reason || "None")} / ${safe(right?.reason || "None")}`,
+    );
+  }
+  lines.push("## Conflicts");
+  for (const c of plan.conflicts)
+    lines.push(`${c.left} / ${c.right}: ${safe(c.reason)}`);
+  lines.push("## Not included");
+  for (const e of plan.excluded)
+    lines.push(`${e.proposal.id}: ${safe(e.reason)}`);
+  lines.push(
+    "## Limitations",
+    ...review.analysis.limitations.map(safe),
+    "",
+    "Optional manual verification was not performed by this application.",
+    "",
+  );
+  return lines.join("\n");
+}

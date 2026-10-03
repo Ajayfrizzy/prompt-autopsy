@@ -1,80 +1,735 @@
-'use client';
-import {newId} from '../domain/id';
-import {useReducer,useRef,useState,useEffect,createContext,useContext,Fragment} from 'react';
-import {ArrowRight,FileText,ShieldCheck,Search,Check,Upload,Download,ChevronLeft,AlertTriangle,Link as LinkIcon} from 'lucide-react';
-import {initialState,reducer,type Event,type State} from '../state/investigation';
-import {parseTranscript} from '../domain/transcript';
-import {validateSnapshot,readUtf8File,bytes} from '../domain/inputs';
-import {money,usedBudget} from '../domain/budget';
-import {downloadFile} from '../browser/files';
-import {createReview,type Review} from '../domain/review';
-import {Results} from './results';
-import {Markdown} from './markdown';
-import {SessionFileInput} from './session-inputs';
-const Ctx=createContext<{state:State;send:(e:Event)=>void;run:(op:'analysis'|'recheck',body:object,apply:(result:unknown,current:State)=>Review)=>Promise<void>}|null>(null);
-export const useInvestigation=()=>{const c=useContext(Ctx);if(!c)throw new Error('Workspace context missing');return c;};
-export function Workspace(){
- const [state,dispatch]=useReducer(reducer,undefined,initialState);const current=useRef(state);current.current=state;
- const send=(e:Event)=>{current.current=reducer(current.current,e);dispatch(e);};
- const raw=state.imports.transcriptText;const rulesLoaded=state.imports.rulesFilename!==null;const [preview,setPreview]=useState<'incident'|'transcript'|'rules'>('transcript');
- // Replace native controls once after hydration; subsequent typing stays
- // entirely React-controlled. Strict Mode effect replay keeps the same key.
- const [formEpoch,setFormEpoch]=useState(0);
- useEffect(()=>{setFormEpoch(1);},[]);
- // A restored back/forward document represents a new session, not recovery.
- const fileRequests=useRef({transcript:0,rules:0});
- useEffect(()=>{
-  const reset=(event:PageTransitionEvent)=>{if(event.persisted){fileRequests.current.transcript++;fileRequests.current.rules++;send({type:'reset'});setPreview('transcript');setFormEpoch(epoch=>epoch+1);}};
-  window.addEventListener('pageshow',reset);
-  return ()=>{window.removeEventListener('pageshow',reset);fileRequests.current.transcript++;fileRequests.current.rules++;};
- },[]);
- const dirty=!!(raw.trim()||rulesLoaded||state.snapshot.incident.trim()||state.stage>0);
- useEffect(()=>{if(!dirty)return;const guard=(e:BeforeUnloadEvent)=>{e.preventDefault();e.returnValue='';};window.addEventListener('beforeunload',guard);return()=>window.removeEventListener('beforeunload',guard);},[dirty]);
- const error=(e:unknown)=>send({type:'error',message:e instanceof Error?e.message:'Something went wrong. Your reviewed inputs are preserved.'});
- async function run(op:'analysis'|'recheck',body:object,apply:(result:unknown,current:State)=>Review){
-  const requestId=newId();
-  const payload=JSON.stringify({...body,requestId});
-  if(bytes(payload)>(op==='analysis'?262144:65536)){error(new Error('The encoded request exceeds the supported size. Review the inputs; no provider request was sent.'));return;}
-  try{send({type:'start',id:requestId,operation:op});}catch(e){error(e);return;}
-  try{
-   const res=await fetch(op==='analysis'?'/api/investigate':'/api/semantic-recheck',{method:'POST',headers:{'Content-Type':'application/json'},body:payload,signal:AbortSignal.timeout(160000)});
-   const data=await res.json();
-   if(data.requestId!==requestId)throw new Error('Response identity did not match. Retry explicitly; billing may be uncertain.');
-   if(!res.ok){send({type:'finish',id:requestId,usage:data.usage,generationStarted:data.generationStarted,error:data.message??'The provider request failed. Your inputs are preserved.'});return;}
-   if(current.current.active?.id!==requestId||current.current.active.version!==current.current.snapshot.version){send({type:'finish',id:requestId,usage:data.usage,generationStarted:data.generationStarted});return;}
-   try{const review=apply(data.result,current.current);send({type:'finish',id:requestId,review,usage:data.usage,generationStarted:data.generationStarted});}
-   catch(e){send({type:'finish',id:requestId,usage:data.usage,generationStarted:data.generationStarted,error:e instanceof Error?e.message:'Invalid provider result'});}
-  }catch(e){send({type:'finish',id:requestId,error:e instanceof Error?e.message:'Request failed. A generation reservation is retained because billing is unknown.'});}
- }
- function parse(text:string,filename:string|null=null){fileRequests.current.transcript++;try{const messages=parseTranscript(text);send({type:'input',patch:{messages,investigationId:newId()},imports:{transcriptText:text,transcriptFilename:filename}});}catch(e){send({type:'input',patch:{messages:[]},imports:{transcriptText:text,transcriptFilename:null}});error(e);}}
- async function file(file:File,kind:'transcript'|'rules'){
-  const request=++fileRequests.current[kind];
-  // Clear the old source while validating its replacement; no stale readiness.
-  if(kind==='transcript')send({type:'input',patch:{messages:[]},imports:{transcriptText:'',transcriptFilename:null}});
-  else send({type:'input',patch:{rulesText:'',rulesBom:false},originalRules:'',imports:{rulesFilename:null}});
-  try{
-   if(file.size>(kind==='transcript'?131072:16384))throw new Error(`${kind} file exceeds the supported byte limit.`);
-   if(kind==='rules'&&!['AGENTS.md','CLAUDE.md'].includes(file.name))throw new Error('Use one file named exactly AGENTS.md or CLAUDE.md.');
-   const decoded=await readUtf8File(file);
-   if(fileRequests.current[kind]!==request)return;
-   if(kind==='transcript'){parse(decoded.text,file.name);setPreview('transcript');}else{if(!decoded.text.trim())throw new Error('The historical rules upload must not be empty.');send({type:'input',patch:{rulesText:decoded.text,rulesBom:decoded.bom,rulesFilename:file.name as 'AGENTS.md'|'CLAUDE.md'},originalRules:decoded.text,imports:{rulesFilename:file.name}});setPreview('rules');}
-  }catch(e){if(fileRequests.current[kind]===request)error(e);}
- }
- let valid=false;let validationMessage='';try{validateSnapshot(state.snapshot);valid=rulesLoaded;}catch(e){validationMessage=e instanceof Error?e.message:'Inputs need attention';}
- const s=state.snapshot;
- return <Ctx.Provider value={{state,send,run}}><div className="app-shell"><header className="topbar"><div className="brand"><span className="brand-mark">⌘</span> Prompt Autopsy <span className="badge">WORKSPACE</span></div><span className="session-note"><span className="dot"/> Current session only</span></header>
- <nav aria-label="Investigation progress" className="steps">{['Import','Privacy Review','Investigation','Decision & Export'].map((label,i)=><button key={label} disabled={(i>1&&!state.review)||!!state.active} onClick={()=>send({type:'stage',stage:i as 0|1|2|3})} aria-current={state.stage===i?'step':undefined}><span>{i+1}</span>{label}{i<3&&<ArrowRight size={13}/>}</button>)}</nav>
- <main><div className="page-heading"><div><p className="eyebrow">{state.stage<2?'PREPARE YOUR INVESTIGATION':'FOLLOW THE EVIDENCE'}</p><h1>{state.stage===0?'Investigate what went wrong with your AI coding session.':state.stage===1?'Review what leaves your workspace.':state.stage===2?'An investigation, grounded in your evidence.':'Decide what belongs in your next session.'}</h1><p className="subheading">{state.stage===0?'Trace a coding-agent failure to its source messages, review possible instruction improvements and decide what to carry into your next session.':state.stage===1?'Inspect every input. Remove credentials, private source code and personal information before processing.':state.stage===2?'Separate documented observations from possible explanations. Sources remain one click away.':'Approval records your decision. It does not establish that a correction prevents future failures.'}</p></div></div>
- {state.error&&<div className="alert" role="alert"><AlertTriangle size={18}/><span>{state.error}</span><button onClick={()=>send({type:'error',message:''})} aria-label="Dismiss error">×</button></div>}
- {state.active&&<div className="notice" role="status"><span className="spinner"/>Checking request size, then reviewing evidence. Your inputs remain in this session. No result is shown until validation completes.</div>}
- <Fragment key={formEpoch}>{state.stage===0&&<div className="input-grid"><section className="stack">
- <article className="panel"><div className="section-title"><span className="number">A</span><div><h2>Describe the incident</h2><p>What happened, and what should have happened?</p></div></div><textarea autoComplete="off" aria-label="Incident description" rows={4} value={s.incident} onFocus={()=>setPreview('incident')} onChange={e=>send({type:'input',patch:{incident:e.target.value}})} placeholder="Example: Ignoring one product removed all four products sharing its screenshot. I expected only the selected product to disappear."/><div className="field-meta">One incident. Be specific about the observed failure. <span>{bytes(s.incident)} / 2,048 bytes</span></div></article>
- <article className="panel"><div className="section-title"><span className="number">B</span><div><h2>Import the coding session</h2><p>A manually prepared, structured plain-text excerpt.</p></div></div><label className="dropzone" onDragOver={e=>e.preventDefault()} onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)void file(f,'transcript');}}><Upload size={24}/><strong>Drop a transcript, or browse</strong><span>UTF-8 plain text · up to 128 KiB</span><SessionFileInput accept=".txt,text/plain" label="Upload transcript" filename={state.imports.transcriptFilename} onFile={f=>void file(f,'transcript')}/></label><div className="between"><span className="muted">Or paste the supported format</span><a href="/samples/transcript.txt" download>Download fictional sample <Download size={13}/></a></div><textarea autoComplete="off" aria-label="Structured transcript" className="code" rows={8} value={raw} onFocus={()=>setPreview('transcript')} onChange={e=>parse(e.target.value)} placeholder={'@@MESSAGE\nspeaker: developer\n@@BODY\nYour message here.\n@@END'}/><p className="field-meta">{s.messages.length?`${s.messages.length} recognized messages · stable references assigned`:'Message boundaries and speakers must validate before continuing.'}</p></article>
- <article className="panel"><div className="section-title"><span className="number">C</span><div><h2>Upload historical instructions</h2><p>The AGENTS.md or CLAUDE.md from the failed session.</p></div></div><SessionFileInput accept=".md" label="Historical instructions" filename={state.imports.rulesFilename} onFile={f=>void file(f,'rules')}/><p className="hint">Current rules may differ from those used then. Uploading a file does not prove that the agent loaded or followed it.</p></article>
- <p className="hint">{!valid&&validationMessage}</p><button className="primary" disabled={!valid||!!state.active} onClick={()=>send({type:'stage',stage:1})}>Review sensitive content <ShieldCheck size={17}/></button></section>
- <aside className="panel preview"><div className="between"><h2>Input preview</h2><span className="badge">LOCAL ONLY</span></div><div className="tabs">{(['incident','transcript','rules'] as const).map(v=><button key={v} className={preview===v?'active':''} onClick={()=>setPreview(v)}>{v}</button>)}</div><div className="preview-content">{preview==='transcript'?(s.messages.length?s.messages.map(m=><div className="message" key={m.id}><div className="between"><strong>{m.id}</strong><span className="badge">{m.speaker}</span></div><pre>{m.body}</pre></div>):<Empty text="Your parsed messages will appear here."/>):preview==='rules'?(rulesLoaded?<Markdown text={s.rulesText}/>:<Empty text="Preview the instructions that existed during the incident."/>):<p className="preserve">{s.incident||'Describe an observed failure to get started.'}</p>}</div><div className="checklist"><h3>Ready to review</h3>{[[!!s.incident.trim(),'Incident described'],[s.messages.length>0,'Transcript parsed'],[rulesLoaded,'Historical rules supplied']].map(([done,label])=><p key={String(label)} className={done?'ready':''}><Check size={15}/>{label}</p>)}<p className="hint">Nothing is sent to OpenAI during import or privacy review.</p></div></aside></div>}
- {state.stage===1&&<><div className="notice"><ShieldCheck size={20}/><p>Review all three inputs. Prompt Autopsy does not guarantee secret detection or complete anonymization. Masked or removed rules will not be restored in exports.</p></div><div className="privacy-grid"><section className="panel"><h2>Incident</h2><textarea autoComplete="off" aria-label="Reviewed incident" rows={4} value={s.incident} onChange={e=>send({type:'input',patch:{incident:e.target.value}})}/><h2 className="spaced">Transcript · {s.messages.length} messages</h2>{s.messages.map(m=><div className="message" key={m.id}><div className="between"><strong>{m.id} <span className="badge">{m.speaker}</span></strong><button onClick={()=>send({type:'input',patch:{messages:s.messages.filter(x=>x.id!==m.id)}})}>Remove message</button></div><textarea autoComplete="off" aria-label={`Review ${m.id}`} className="code" rows={5} value={m.body} onChange={e=>send({type:'input',patch:{messages:s.messages.map(x=>x.id===m.id?{...x,body:e.target.value}:x)}})}/>{m.originalRef&&<label>Source reference<input value={m.originalRef} onChange={e=>send({type:'input',patch:{messages:s.messages.map(x=>x.id===m.id?{...x,originalRef:e.target.value}:x)}})}/></label>}</div>)}</section><aside className="stack"><section className="panel"><h2>{s.rulesFilename} · reviewed baseline</h2><p className="hint">This exact version will be analyzed and used for the final rules export.</p><textarea autoComplete="off" aria-label="Reviewed historical rules" className="code" rows={19} value={s.rulesText} onChange={e=>send({type:'input',patch:{rulesText:e.target.value}})}/>{!s.rulesText.trim()&&<p className="hint">No historical instructions remain for comparison.</p>}</section><section className="panel"><h2>Before processing</h2><p>{s.messages.length} messages · {s.rulesFilename} · {bytes(s.incident)} incident bytes</p><p className="hint">After you consent, Prompt Autopsy sends the reviewed content to OpenAI to verify request size before AI analysis. If the request fits the supported limit, analysis can proceed.</p><p className="hint">OpenAI API data is not used for model training by default. Standard abuse-monitoring controls may retain customer content for up to 30 days. Prompt Autopsy itself does not persist the investigation. <a href="https://developers.openai.com/api/docs/guides/your-data" target="_blank" rel="noreferrer">Provider data policy</a></p><label className="consent"><input type="checkbox" checked={state.consent} onChange={e=>send({type:'consent',value:e.target.checked})}/>I reviewed these inputs and consent to OpenAI counting and analysis.</label><p className="hint">{!valid&&validationMessage}</p><button className="primary" disabled={!valid||!state.consent||!!state.active} onClick={()=>void run('analysis',{snapshot:s,consent:true},result=>createReview(result as Parameters<typeof createReview>[0],s))}>Start Investigation <Search size={17}/></button></section></aside></div></>}
- </Fragment>{state.stage>=2&&state.review&&<Results/>}
- </main><footer><span><ShieldCheck size={13}/> Current session only. Export what you want to keep.</span><span>This investigation has a USD 0.40 in-session AI budget · {money(state.ledger.reduce((n,a)=>n+a.spent,0))} spent · {money(state.ledger.reduce((n,a)=>n+a.held,0))} reserved · {money(Math.max(0,400000-usedBudget(state.ledger)))} available</span></footer></div></Ctx.Provider>;
+"use client";
+import { newId } from "../domain/id";
+import {
+  useReducer,
+  useRef,
+  useState,
+  useEffect,
+  createContext,
+  useContext,
+  Fragment,
+} from "react";
+import {
+  ArrowRight,
+  FileText,
+  ShieldCheck,
+  Search,
+  Check,
+  Upload,
+  Download,
+  ChevronLeft,
+  AlertTriangle,
+  Link as LinkIcon,
+} from "lucide-react";
+import {
+  initialState,
+  reducer,
+  type Event,
+  type State,
+} from "../state/investigation";
+import { parseTranscript } from "../domain/transcript";
+import { validateSnapshot, readUtf8File, bytes } from "../domain/inputs";
+import { money, usedBudget } from "../domain/budget";
+import { downloadFile } from "../browser/files";
+import { createReview, type Review } from "../domain/review";
+import { Results } from "./results";
+import { Markdown } from "./markdown";
+import { SessionFileInput } from "./session-inputs";
+const Ctx = createContext<{
+  state: State;
+  send: (e: Event) => void;
+  run: (
+    op: "analysis" | "recheck",
+    body: object,
+    apply: (result: unknown, current: State) => Review,
+  ) => Promise<void>;
+} | null>(null);
+export const useInvestigation = () => {
+  const c = useContext(Ctx);
+  if (!c) throw new Error("Workspace context missing");
+  return c;
+};
+export function Workspace() {
+  const [state, dispatch] = useReducer(reducer, undefined, initialState);
+  const current = useRef(state);
+  current.current = state;
+  const send = (e: Event) => {
+    current.current = reducer(current.current, e);
+    dispatch(e);
+  };
+  const raw = state.imports.transcriptText;
+  const rulesLoaded = state.imports.rulesFilename !== null;
+  const [preview, setPreview] = useState<"incident" | "transcript" | "rules">(
+    "transcript",
+  );
+  // Replace native controls once after hydration; subsequent typing stays
+  // entirely React-controlled. Strict Mode effect replay keeps the same key.
+  const [formEpoch, setFormEpoch] = useState(0);
+  useEffect(() => {
+    setFormEpoch(1);
+  }, []);
+  // A restored back/forward document represents a new session, not recovery.
+  const fileRequests = useRef({ transcript: 0, rules: 0 });
+  useEffect(() => {
+    const reset = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        fileRequests.current.transcript++;
+        fileRequests.current.rules++;
+        send({ type: "reset" });
+        setPreview("transcript");
+        setFormEpoch((epoch) => epoch + 1);
+      }
+    };
+    window.addEventListener("pageshow", reset);
+    return () => {
+      window.removeEventListener("pageshow", reset);
+      fileRequests.current.transcript++;
+      fileRequests.current.rules++;
+    };
+  }, []);
+  const dirty = !!(
+    raw.trim() ||
+    rulesLoaded ||
+    state.snapshot.incident.trim() ||
+    state.stage > 0
+  );
+  useEffect(() => {
+    if (!dirty) return;
+    const guard = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [dirty]);
+  const error = (e: unknown) =>
+    send({
+      type: "error",
+      message:
+        e instanceof Error
+          ? e.message
+          : "Something went wrong. Your reviewed inputs are preserved.",
+    });
+  async function run(
+    op: "analysis" | "recheck",
+    body: object,
+    apply: (result: unknown, current: State) => Review,
+  ) {
+    const requestId = newId();
+    const payload = JSON.stringify({ ...body, requestId });
+    if (bytes(payload) > (op === "analysis" ? 262144 : 65536)) {
+      error(
+        new Error(
+          "The encoded request exceeds the supported size. Review the inputs; no provider request was sent.",
+        ),
+      );
+      return;
+    }
+    try {
+      send({ type: "start", id: requestId, operation: op });
+    } catch (e) {
+      error(e);
+      return;
+    }
+    try {
+      const res = await fetch(
+        op === "analysis" ? "/api/investigate" : "/api/semantic-recheck",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: payload,
+          signal: AbortSignal.timeout(160000),
+        },
+      );
+      const data = await res.json();
+      if (data.requestId !== requestId)
+        throw new Error(
+          "Response identity did not match. Retry explicitly; billing may be uncertain.",
+        );
+      if (!res.ok) {
+        send({
+          type: "finish",
+          id: requestId,
+          usage: data.usage,
+          generationStarted: data.generationStarted,
+          error:
+            data.message ??
+            "The provider request failed. Your inputs are preserved.",
+        });
+        return;
+      }
+      if (
+        current.current.active?.id !== requestId ||
+        current.current.active.version !== current.current.snapshot.version
+      ) {
+        send({
+          type: "finish",
+          id: requestId,
+          usage: data.usage,
+          generationStarted: data.generationStarted,
+        });
+        return;
+      }
+      try {
+        const review = apply(data.result, current.current);
+        send({
+          type: "finish",
+          id: requestId,
+          review,
+          usage: data.usage,
+          generationStarted: data.generationStarted,
+        });
+      } catch (e) {
+        send({
+          type: "finish",
+          id: requestId,
+          usage: data.usage,
+          generationStarted: data.generationStarted,
+          error: e instanceof Error ? e.message : "Invalid provider result",
+        });
+      }
+    } catch (e) {
+      send({
+        type: "finish",
+        id: requestId,
+        error:
+          e instanceof Error
+            ? e.message
+            : "Request failed. A generation reservation is retained because billing is unknown.",
+      });
+    }
+  }
+  function parse(text: string, filename: string | null = null) {
+    fileRequests.current.transcript++;
+    try {
+      const messages = parseTranscript(text);
+      send({
+        type: "input",
+        patch: { messages, investigationId: newId() },
+        imports: { transcriptText: text, transcriptFilename: filename },
+      });
+    } catch (e) {
+      send({
+        type: "input",
+        patch: { messages: [] },
+        imports: { transcriptText: text, transcriptFilename: null },
+      });
+      error(e);
+    }
+  }
+  async function file(file: File, kind: "transcript" | "rules") {
+    const request = ++fileRequests.current[kind];
+    // Clear the old source while validating its replacement; no stale readiness.
+    if (kind === "transcript")
+      send({
+        type: "input",
+        patch: { messages: [] },
+        imports: { transcriptText: "", transcriptFilename: null },
+      });
+    else
+      send({
+        type: "input",
+        patch: { rulesText: "", rulesBom: false },
+        originalRules: "",
+        imports: { rulesFilename: null },
+      });
+    try {
+      if (file.size > (kind === "transcript" ? 131072 : 16384))
+        throw new Error(`${kind} file exceeds the supported byte limit.`);
+      if (kind === "rules" && !["AGENTS.md", "CLAUDE.md"].includes(file.name))
+        throw new Error("Use one file named exactly AGENTS.md or CLAUDE.md.");
+      const decoded = await readUtf8File(file);
+      if (fileRequests.current[kind] !== request) return;
+      if (kind === "transcript") {
+        parse(decoded.text, file.name);
+        setPreview("transcript");
+      } else {
+        if (!decoded.text.trim())
+          throw new Error("The historical rules upload must not be empty.");
+        send({
+          type: "input",
+          patch: {
+            rulesText: decoded.text,
+            rulesBom: decoded.bom,
+            rulesFilename: file.name as "AGENTS.md" | "CLAUDE.md",
+          },
+          originalRules: decoded.text,
+          imports: { rulesFilename: file.name },
+        });
+        setPreview("rules");
+      }
+    } catch (e) {
+      if (fileRequests.current[kind] === request) error(e);
+    }
+  }
+  let valid = false;
+  let validationMessage = "";
+  try {
+    validateSnapshot(state.snapshot);
+    valid = rulesLoaded;
+  } catch (e) {
+    validationMessage =
+      e instanceof Error ? e.message : "Inputs need attention";
+  }
+  const s = state.snapshot;
+  return (
+    <Ctx.Provider value={{ state, send, run }}>
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand">
+            <span className="brand-mark">⌘</span> Prompt Autopsy{" "}
+            <span className="badge">WORKSPACE</span>
+          </div>
+          <span className="session-note">
+            <span className="dot" /> Current session only
+          </span>
+        </header>
+        <nav aria-label="Investigation progress" className="steps">
+          {[
+            "Import",
+            "Privacy Review",
+            "Investigation",
+            "Decision & Export",
+          ].map((label, i) => (
+            <button
+              key={label}
+              disabled={(i > 1 && !state.review) || !!state.active}
+              onClick={() => send({ type: "stage", stage: i as 0 | 1 | 2 | 3 })}
+              aria-current={state.stage === i ? "step" : undefined}
+            >
+              <span>{i + 1}</span>
+              {label}
+              {i < 3 && <ArrowRight size={13} />}
+            </button>
+          ))}
+        </nav>
+        <main>
+          <div className="page-heading">
+            <div>
+              <p className="eyebrow">
+                {state.stage < 2
+                  ? "PREPARE YOUR INVESTIGATION"
+                  : "FOLLOW THE EVIDENCE"}
+              </p>
+              <h1>
+                {state.stage === 0
+                  ? "Investigate what went wrong with your AI coding session."
+                  : state.stage === 1
+                    ? "Review what leaves your workspace."
+                    : state.stage === 2
+                      ? "An investigation, grounded in your evidence."
+                      : "Decide what belongs in your next session."}
+              </h1>
+              <p className="subheading">
+                {state.stage === 0
+                  ? "Trace a coding-agent failure to its source messages, review possible instruction improvements and decide what to carry into your next session."
+                  : state.stage === 1
+                    ? "Inspect every input. Remove credentials, private source code and personal information before processing."
+                    : state.stage === 2
+                      ? "Separate documented observations from possible explanations. Sources remain one click away."
+                      : "Approval records your decision. It does not establish that a correction prevents future failures."}
+              </p>
+            </div>
+          </div>
+          {state.error && (
+            <div className="alert" role="alert">
+              <AlertTriangle size={18} />
+              <span>{state.error}</span>
+              <button
+                onClick={() => send({ type: "error", message: "" })}
+                aria-label="Dismiss error"
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {state.active && (
+            <div className="notice" role="status">
+              <span className="spinner" />
+              Checking request size, then reviewing evidence. Your inputs remain
+              in this session. No result is shown until validation completes.
+            </div>
+          )}
+          <Fragment key={formEpoch}>
+            {state.stage === 0 && (
+              <div className="input-grid">
+                <section className="stack">
+                  <article className="panel">
+                    <div className="section-title">
+                      <span className="number">A</span>
+                      <div>
+                        <h2>Describe the incident</h2>
+                        <p>What happened, and what should have happened?</p>
+                      </div>
+                    </div>
+                    <textarea
+                      autoComplete="off"
+                      aria-label="Incident description"
+                      rows={4}
+                      value={s.incident}
+                      onFocus={() => setPreview("incident")}
+                      onChange={(e) =>
+                        send({
+                          type: "input",
+                          patch: { incident: e.target.value },
+                        })
+                      }
+                      placeholder="Example: Ignoring one product removed all four products sharing its screenshot. I expected only the selected product to disappear."
+                    />
+                    <div className="field-meta">
+                      One incident. Be specific about the observed failure.{" "}
+                      <span>{bytes(s.incident)} / 2,048 bytes</span>
+                    </div>
+                  </article>
+                  <article className="panel">
+                    <div className="section-title">
+                      <span className="number">B</span>
+                      <div>
+                        <h2>Import the coding session</h2>
+                        <p>
+                          A manually prepared, structured plain-text excerpt.
+                        </p>
+                      </div>
+                    </div>
+                    <label
+                      className="dropzone"
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files[0];
+                        if (f) void file(f, "transcript");
+                      }}
+                    >
+                      <Upload size={24} />
+                      <strong>Drop a transcript, or browse</strong>
+                      <span>UTF-8 plain text · up to 128 KiB</span>
+                      <SessionFileInput
+                        accept=".txt,text/plain"
+                        label="Upload transcript"
+                        filename={state.imports.transcriptFilename}
+                        onFile={(f) => void file(f, "transcript")}
+                      />
+                    </label>
+                    <div className="between">
+                      <span className="muted">
+                        Or paste the supported format
+                      </span>
+                      <a href="/samples/transcript.txt" download>
+                        Download fictional sample <Download size={13} />
+                      </a>
+                    </div>
+                    <textarea
+                      autoComplete="off"
+                      aria-label="Structured transcript"
+                      className="code"
+                      rows={8}
+                      value={raw}
+                      onFocus={() => setPreview("transcript")}
+                      onChange={(e) => parse(e.target.value)}
+                      placeholder={
+                        "@@MESSAGE\nspeaker: developer\n@@BODY\nYour message here.\n@@END"
+                      }
+                    />
+                    <p className="field-meta">
+                      {s.messages.length
+                        ? `${s.messages.length} recognized messages · stable references assigned`
+                        : "Message boundaries and speakers must validate before continuing."}
+                    </p>
+                  </article>
+                  <article className="panel">
+                    <div className="section-title">
+                      <span className="number">C</span>
+                      <div>
+                        <h2>Upload historical instructions</h2>
+                        <p>
+                          The AGENTS.md or CLAUDE.md from the failed session.
+                        </p>
+                      </div>
+                    </div>
+                    <SessionFileInput
+                      accept=".md"
+                      label="Historical instructions"
+                      filename={state.imports.rulesFilename}
+                      onFile={(f) => void file(f, "rules")}
+                    />
+                    <p className="hint">
+                      Current rules may differ from those used then. Uploading a
+                      file does not prove that the agent loaded or followed it.
+                    </p>
+                  </article>
+                  <p className="hint">{!valid && validationMessage}</p>
+                  <button
+                    className="primary"
+                    disabled={!valid || !!state.active}
+                    onClick={() => send({ type: "stage", stage: 1 })}
+                  >
+                    Review sensitive content <ShieldCheck size={17} />
+                  </button>
+                </section>
+                <aside className="panel preview">
+                  <div className="between">
+                    <h2>Input preview</h2>
+                    <span className="badge">LOCAL ONLY</span>
+                  </div>
+                  <div className="tabs">
+                    {(["incident", "transcript", "rules"] as const).map((v) => (
+                      <button
+                        key={v}
+                        className={preview === v ? "active" : ""}
+                        onClick={() => setPreview(v)}
+                      >
+                        {v}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="preview-content">
+                    {preview === "transcript" ? (
+                      s.messages.length ? (
+                        s.messages.map((m) => (
+                          <div className="message" key={m.id}>
+                            <div className="between">
+                              <strong>{m.id}</strong>
+                              <span className="badge">{m.speaker}</span>
+                            </div>
+                            <pre>{m.body}</pre>
+                          </div>
+                        ))
+                      ) : (
+                        <Empty text="Your parsed messages will appear here." />
+                      )
+                    ) : preview === "rules" ? (
+                      rulesLoaded ? (
+                        <Markdown text={s.rulesText} />
+                      ) : (
+                        <Empty text="Preview the instructions that existed during the incident." />
+                      )
+                    ) : (
+                      <p className="preserve">
+                        {s.incident ||
+                          "Describe an observed failure to get started."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="checklist">
+                    <h3>Ready to review</h3>
+                    {[
+                      [!!s.incident.trim(), "Incident described"],
+                      [s.messages.length > 0, "Transcript parsed"],
+                      [rulesLoaded, "Historical rules supplied"],
+                    ].map(([done, label]) => (
+                      <p key={String(label)} className={done ? "ready" : ""}>
+                        <Check size={15} />
+                        {label}
+                      </p>
+                    ))}
+                    <p className="hint">
+                      Nothing is sent to OpenAI during import or privacy review.
+                    </p>
+                  </div>
+                </aside>
+              </div>
+            )}
+            {state.stage === 1 && (
+              <>
+                <div className="notice">
+                  <ShieldCheck size={20} />
+                  <p>
+                    Review all three inputs. Prompt Autopsy does not guarantee
+                    secret detection or complete anonymization. Masked or
+                    removed rules will not be restored in exports.
+                  </p>
+                </div>
+                <div className="privacy-grid">
+                  <section className="panel">
+                    <h2>Incident</h2>
+                    <textarea
+                      autoComplete="off"
+                      aria-label="Reviewed incident"
+                      rows={4}
+                      value={s.incident}
+                      onChange={(e) =>
+                        send({
+                          type: "input",
+                          patch: { incident: e.target.value },
+                        })
+                      }
+                    />
+                    <h2 className="spaced">
+                      Transcript · {s.messages.length} messages
+                    </h2>
+                    {s.messages.map((m) => (
+                      <div className="message" key={m.id}>
+                        <div className="between">
+                          <strong>
+                            {m.id} <span className="badge">{m.speaker}</span>
+                          </strong>
+                          <button
+                            onClick={() =>
+                              send({
+                                type: "input",
+                                patch: {
+                                  messages: s.messages.filter(
+                                    (x) => x.id !== m.id,
+                                  ),
+                                },
+                              })
+                            }
+                          >
+                            Remove message
+                          </button>
+                        </div>
+                        <textarea
+                          autoComplete="off"
+                          aria-label={`Review ${m.id}`}
+                          className="code"
+                          rows={5}
+                          value={m.body}
+                          onChange={(e) =>
+                            send({
+                              type: "input",
+                              patch: {
+                                messages: s.messages.map((x) =>
+                                  x.id === m.id
+                                    ? { ...x, body: e.target.value }
+                                    : x,
+                                ),
+                              },
+                            })
+                          }
+                        />
+                        {m.originalRef && (
+                          <label>
+                            Source reference
+                            <input
+                              value={m.originalRef}
+                              onChange={(e) =>
+                                send({
+                                  type: "input",
+                                  patch: {
+                                    messages: s.messages.map((x) =>
+                                      x.id === m.id
+                                        ? { ...x, originalRef: e.target.value }
+                                        : x,
+                                    ),
+                                  },
+                                })
+                              }
+                            />
+                          </label>
+                        )}
+                      </div>
+                    ))}
+                  </section>
+                  <aside className="stack">
+                    <section className="panel">
+                      <h2>{s.rulesFilename} · reviewed baseline</h2>
+                      <p className="hint">
+                        This exact version will be analyzed and used for the
+                        final rules export.
+                      </p>
+                      <textarea
+                        autoComplete="off"
+                        aria-label="Reviewed historical rules"
+                        className="code"
+                        rows={19}
+                        value={s.rulesText}
+                        onChange={(e) =>
+                          send({
+                            type: "input",
+                            patch: { rulesText: e.target.value },
+                          })
+                        }
+                      />
+                      {!s.rulesText.trim() && (
+                        <p className="hint">
+                          No historical instructions remain for comparison.
+                        </p>
+                      )}
+                    </section>
+                    <section className="panel">
+                      <h2>Before processing</h2>
+                      <p>
+                        {s.messages.length} messages · {s.rulesFilename} ·{" "}
+                        {bytes(s.incident)} incident bytes
+                      </p>
+                      <p className="hint">
+                        After you consent, Prompt Autopsy sends the reviewed
+                        content to OpenAI to verify request size before AI
+                        analysis. If the request fits the supported limit,
+                        analysis can proceed.
+                      </p>
+                      <p className="hint">
+                        OpenAI API data is not used for model training by
+                        default. Standard abuse-monitoring controls may retain
+                        customer content for up to 30 days. Prompt Autopsy
+                        itself does not persist the investigation.{" "}
+                        <a
+                          href="https://developers.openai.com/api/docs/guides/your-data"
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Provider data policy
+                        </a>
+                      </p>
+                      <label className="consent">
+                        <input
+                          type="checkbox"
+                          checked={state.consent}
+                          onChange={(e) =>
+                            send({ type: "consent", value: e.target.checked })
+                          }
+                        />
+                        I reviewed these inputs and consent to OpenAI counting
+                        and analysis.
+                      </label>
+                      <p className="hint">{!valid && validationMessage}</p>
+                      <button
+                        className="primary"
+                        disabled={!valid || !state.consent || !!state.active}
+                        onClick={() =>
+                          void run(
+                            "analysis",
+                            { snapshot: s, consent: true },
+                            (result) =>
+                              createReview(
+                                result as Parameters<typeof createReview>[0],
+                                s,
+                              ),
+                          )
+                        }
+                      >
+                        Start Investigation <Search size={17} />
+                      </button>
+                    </section>
+                  </aside>
+                </div>
+              </>
+            )}
+          </Fragment>
+          {state.stage >= 2 && state.review && <Results />}
+        </main>
+        <footer>
+          <span>
+            <ShieldCheck size={13} /> Current session only. Export what you want
+            to keep.
+          </span>
+          <span>
+            This investigation has a USD 0.40 in-session AI budget ·{" "}
+            {money(state.ledger.reduce((n, a) => n + a.spent, 0))} spent ·{" "}
+            {money(state.ledger.reduce((n, a) => n + a.held, 0))} reserved ·{" "}
+            {money(Math.max(0, 400000 - usedBudget(state.ledger)))} available
+          </span>
+        </footer>
+      </div>
+    </Ctx.Provider>
+  );
 }
-function Empty({text}:{text:string}){return <div className="empty"><FileText size={32}/><p>{text}</p><span>Exact source references, before interpretation.</span></div>;}
+function Empty({ text }: { text: string }) {
+  return (
+    <div className="empty">
+      <FileText size={32} />
+      <p>{text}</p>
+      <span>Exact source references, before interpretation.</span>
+    </div>
+  );
+}

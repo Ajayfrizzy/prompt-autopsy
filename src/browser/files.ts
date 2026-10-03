@@ -1,7 +1,11 @@
 export function downloadFile(filename: string, text: string) {
-  const blob = new Blob([text], {type: 'text/plain;charset=utf-8'});
+  const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const anchor = document.createElement('a'); anchor.href = url; anchor.download = filename;
-  document.body.append(anchor); anchor.click(); anchor.remove();
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
