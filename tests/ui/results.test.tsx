@@ -71,11 +71,12 @@ function findingOutput(noChange = false): AnalysisWire {
               },
             ]
           : [],
-        recommendation: noChange ? "no_change" : "add",
+        ...(noChange
+          ? { recommendation: "no_change" as const, proposalKey: null }
+          : { recommendation: "add" as const, proposalKey: "P1" }),
         rationale: noChange
           ? "No addition recommended in this controlled fixture."
           : "Require explicit operation scope before implementation.",
-        proposalKey: noChange ? null : "P1",
       },
     ],
     timeline: [

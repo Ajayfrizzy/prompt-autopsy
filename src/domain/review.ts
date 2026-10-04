@@ -1,3 +1,8 @@
+import {
+  DomainValidationError,
+  type DomainValidationCode,
+  withDomainLocation,
+} from "./validation-category";
 import { newId } from "./id";
 import type { AnalysisWire, SemanticRecheckWire } from "../server/ai/schemas";
 import { segmentRules, type Snapshot } from "./inputs";
@@ -49,8 +54,12 @@ export type Review = {
   relations: { left: string; right: string; reason: string }[];
 };
 const id = () => newId();
-function requireThat(value: unknown, message: string): asserts value {
-  if (!value) throw new Error(message);
+function requireThat(
+  value: unknown,
+  code: DomainValidationCode,
+  message: string,
+): asserts value {
+  if (!value) throw new DomainValidationError(code, message);
 }
 export function exactOccurrence(
   text: string,
@@ -59,18 +68,24 @@ export function exactOccurrence(
 ): number {
   requireThat(
     quote.length && Number.isInteger(occurrence) && occurrence > 0,
+    "EVIDENCE_OCCURRENCE_INVALID",
     "Invalid quote occurrence",
   );
   let at = -1;
   for (let n = 0; n < occurrence; n++) {
     at = text.indexOf(quote, at + 1);
-    requireThat(at >= 0, "Exact reviewed quote was not found");
+    requireThat(
+      at >= 0,
+      "EVIDENCE_QUOTE_MISMATCH",
+      "Exact reviewed quote was not found",
+    );
   }
   return at;
 }
 function boundary(text: string, n: number) {
   requireThat(
     Number.isInteger(n) && n >= 0 && n <= text.length,
+    "EDIT_BOUNDARY_INVALID",
     "Invalid edit boundary",
   );
   if (n > 0 && n < text.length) {
@@ -79,26 +94,30 @@ function boundary(text: string, n: number) {
     requireThat(
       !(a >= 0xd800 && a <= 0xdbff && b >= 0xdc00 && b <= 0xdfff) &&
         !(a === 13 && b === 10),
+      "EDIT_BOUNDARY_INVALID",
       "Edit splits a Unicode character or CRLF",
     );
   }
 }
-function validateEdit(snapshot: Snapshot, edit: Edit) {
+export function validateEdit(snapshot: Snapshot, edit: Edit) {
   boundary(snapshot.rulesText, edit.start);
   boundary(snapshot.rulesText, edit.end);
   requireThat(
     edit.end >= edit.start &&
       snapshot.rulesText.slice(edit.start, edit.end) === edit.expectedText,
+    "EDIT_ANCHOR_INVALID",
     "Edit anchor no longer matches reviewed rules",
   );
   requireThat(
     edit.replacementText.trim() &&
       [...edit.replacementText].length <= 1200 &&
       new TextEncoder().encode(edit.replacementText).length <= 4096,
+    "REPLACEMENT_LIMIT_INVALID",
     "Replacement must contain 1–1,200 characters and at most 4,096 bytes",
   );
   requireThat(
     edit.expectedText !== edit.replacementText,
+    "NO_OP_EDIT",
     "No-op edit is not exportable",
   );
 }
@@ -113,80 +132,105 @@ export function createReview(
     occurrence: number;
   }) => {
     const m = snapshot.messages.find((m) => m.id === ref.messageId);
-    requireThat(m, "Unknown or retired message reference");
+    requireThat(
+      m,
+      "UNKNOWN_MESSAGE_REFERENCE",
+      "Unknown or retired message reference",
+    );
     exactOccurrence(m.body, ref.quote, ref.occurrence);
   };
-  for (const f of analysis.findings) {
-    for (const o of [
-      ...f.observations,
-      ...(f.documentedRequirement ? [f.documentedRequirement] : []),
-    ])
-      o.evidence.forEach(messageEvidence);
-    for (const h of f.hypotheses) h.supportingEvidence.forEach(messageEvidence);
-    for (const c of f.comparisons)
-      for (const ref of c.rules) {
-        const rule = rules.find((r) => r.id === ref.ruleId);
-        requireThat(rule, "Unknown rule reference");
-        exactOccurrence(rule.text, ref.quote, ref.occurrence);
-      }
-  }
-  analysis.timeline.forEach((t) => t.evidence.forEach(messageEvidence));
+  analysis.findings.forEach((f, findingIndex) =>
+    withDomainLocation({ domainArea: "finding", findingIndex }, () => {
+      for (const o of [
+        ...f.observations,
+        ...(f.documentedRequirement ? [f.documentedRequirement] : []),
+      ])
+        o.evidence.forEach(messageEvidence);
+      for (const h of f.hypotheses)
+        h.supportingEvidence.forEach(messageEvidence);
+      f.comparisons.forEach((c, comparisonIndex) =>
+        withDomainLocation(
+          { domainArea: "finding.comparison", findingIndex, comparisonIndex },
+          () => {
+            for (const ref of c.rules) {
+              const rule = rules.find((r) => r.id === ref.ruleId);
+              requireThat(
+                rule,
+                "UNKNOWN_RULE_REFERENCE",
+                "Unknown rule reference",
+              );
+              exactOccurrence(rule.text, ref.quote, ref.occurrence);
+            }
+          },
+        ),
+      );
+    }),
+  );
+  analysis.timeline.forEach((t, timelineIndex) =>
+    withDomainLocation({ domainArea: "timeline", timelineIndex }, () =>
+      t.evidence.forEach(messageEvidence),
+    ),
+  );
   const findings = analysis.findings.map((source) => ({
     id: id(),
     source,
     decision: "Pending" as Decision,
     reason: "",
   }));
-  const proposals: Proposal[] = analysis.proposals.map((original) => {
-    const target = original.target,
-      rule = rules.find((r) => r.id === target.ruleId);
-    let start: number, end: number;
-    if (target.placement === "end_of_file") {
-      start = end = snapshot.rulesText.length;
-    } else {
-      requireThat(rule, "Unknown edit rule");
-      if (original.operation === "replace") {
-        requireThat(
-          target.quote && target.occurrence,
-          "Missing replacement anchor",
-        );
-        start =
-          rule.start +
-          exactOccurrence(rule.text, target.quote, target.occurrence);
-        end = start + target.quote.length;
-      } else
-        start = end = target.placement === "before" ? rule.start : rule.end;
-    }
-    const current: Edit = {
-      version: 1,
-      start,
-      end,
-      expectedText: snapshot.rulesText.slice(start, end),
-      replacementText: original.replacementText,
-      affectedRuleIds: rule ? [rule.id] : [],
-    };
-    validateEdit(snapshot, current);
-    return {
-      id: id(),
-      findingIds: original.findingKeys.map((key) => {
-        const f = findings.find((f) => f.source.key === key);
-        requireThat(f, "Unknown finding");
-        return f.id;
+  const proposals: Proposal[] = analysis.proposals.map(
+    (original, proposalIndex) =>
+      withDomainLocation({ domainArea: "proposal", proposalIndex }, () => {
+        const target = original.target,
+          rule = rules.find((r) => r.id === target.ruleId);
+        let start: number, end: number;
+        if (target.placement === "end_of_file") {
+          start = end = snapshot.rulesText.length;
+        } else {
+          requireThat(rule, "EDIT_RULE_REFERENCE_INVALID", "Unknown edit rule");
+          if (original.operation === "replace") {
+            requireThat(
+              target.quote && target.occurrence,
+              "EDIT_ANCHOR_INVALID",
+              "Missing replacement anchor",
+            );
+            start =
+              rule.start +
+              exactOccurrence(rule.text, target.quote, target.occurrence);
+            end = start + target.quote.length;
+          } else
+            start = end = target.placement === "before" ? rule.start : rule.end;
+        }
+        const current: Edit = {
+          version: 1,
+          start,
+          end,
+          expectedText: snapshot.rulesText.slice(start, end),
+          replacementText: original.replacementText,
+          affectedRuleIds: rule ? [rule.id] : [],
+        };
+        validateEdit(snapshot, current);
+        return {
+          id: id(),
+          findingIds: original.findingKeys.map((key) => {
+            const f = findings.find((f) => f.source.key === key);
+            requireThat(f, "PROPOSAL_REFERENCE_INVALID", "Unknown finding");
+            return f.id;
+          }),
+          original,
+          current,
+          decision: "Pending",
+          reason: "",
+          history: [],
+          superseded: false,
+          semantic: {
+            state: "initial",
+            binding: "",
+            result: null,
+            disposition: "",
+          },
+        };
       }),
-      original,
-      current,
-      decision: "Pending",
-      reason: "",
-      history: [],
-      superseded: false,
-      semantic: {
-        state: "initial",
-        binding: "",
-        result: null,
-        disposition: "",
-      },
-    };
-  });
+  );
   const order = new Map(snapshot.messages.map((m, i) => [m.id, i]));
   const timeline = [...analysis.timeline].sort(
     (a, b) =>
@@ -198,17 +242,30 @@ export function createReview(
     analysis: { ...analysis, timeline },
     findings,
     proposals,
-    relations: analysis.proposalRelations.map((r) => {
-      const left = proposals.find((p) => p.original?.key === r.leftProposalKey),
-        right = proposals.find((p) => p.original?.key === r.rightProposalKey);
-      requireThat(left && right, "Unknown relation proposal");
-      return { left: left.id, right: right.id, reason: r.reasoning };
-    }),
+    relations: analysis.proposalRelations.map((r, relationIndex) =>
+      withDomainLocation(
+        { domainArea: "proposal.relation", relationIndex },
+        () => {
+          const left = proposals.find(
+              (p) => p.original?.key === r.leftProposalKey,
+            ),
+            right = proposals.find(
+              (p) => p.original?.key === r.rightProposalKey,
+            );
+          requireThat(
+            left && right,
+            "PROPOSAL_REFERENCE_INVALID",
+            "Unknown relation proposal",
+          );
+          return { left: left.id, right: right.id, reason: r.reasoning };
+        },
+      ),
+    ),
   };
 }
 function get(review: Review, id: string) {
   const p = review.proposals.find((p) => p.id === id);
-  requireThat(p, "Unknown proposal");
+  requireThat(p, "PROPOSAL_REFERENCE_INVALID", "Unknown proposal");
   return p;
 }
 function update(
@@ -280,24 +337,35 @@ export function applySemanticResult(
   binding: string,
   result: SemanticRecheckWire,
 ): Review {
-  requireThat(
-    semanticContext(review, id).binding === binding,
-    "Semantic response is stale",
+  return withDomainLocation(
+    {
+      domainArea: "semantic",
+      proposalIndex: review.proposals.findIndex((p) => p.id === id),
+    },
+    () => {
+      requireThat(
+        semanticContext(review, id).binding === binding,
+        "SEMANTIC_RESPONSE_STALE",
+        "Semantic response is stale",
+      );
+      const ruleIds = segmentRules(review.snapshot.rulesText).map((r) => r.id),
+        peerIds = semanticContext(review, id).context.peers.map((p) => p.id);
+      for (const c of result.comparisons)
+        requireThat(
+          c.ruleIds.every((r) => ruleIds.includes(r)) &&
+            c.proposalIds.every((p) => peerIds.includes(p)),
+          "SEMANTIC_REFERENCE_INVALID",
+          "Unknown semantic reference",
+        );
+      return update(review, id, (p) => ({
+        ...p,
+        decision: "Pending",
+        semantic: { state: "reviewed", binding, result, disposition: "" },
+      }));
+    },
   );
-  const ruleIds = segmentRules(review.snapshot.rulesText).map((r) => r.id),
-    peerIds = semanticContext(review, id).context.peers.map((p) => p.id);
-  for (const c of result.comparisons)
-    requireThat(
-      c.ruleIds.every((r) => ruleIds.includes(r)) &&
-        c.proposalIds.every((p) => peerIds.includes(p)),
-      "Unknown semantic reference",
-    );
-  return update(review, id, (p) => ({
-    ...p,
-    decision: "Pending",
-    semantic: { state: "reviewed", binding, result, disposition: "" },
-  }));
 }
+
 export function markSemanticPending(
   review: Review,
   id: string,
@@ -315,13 +383,18 @@ export function disposeSemanticIssue(
   id: string,
   reason: string,
 ) {
-  requireThat(reason.trim(), "A disposition requires a reason");
+  requireThat(
+    reason.trim(),
+    "REVIEW_DECISION_INVALID",
+    "A disposition requires a reason",
+  );
   const p = get(review, id);
   requireThat(
     p.semantic.state === "initial" ||
       (p.semantic.state === "reviewed" &&
         p.semantic.result?.status !== "uncertain" &&
         p.semantic.binding === semanticContext(review, id).binding),
+    "REVIEW_DECISION_INVALID",
     "A current conclusive semantic review is required",
   );
   return update(review, id, (p) => ({
@@ -440,13 +513,22 @@ export function decideProposal(
   reason = "",
 ): Review {
   const p = get(review, id);
-  requireThat(!p.superseded, "Proposal is superseded");
+  requireThat(
+    !p.superseded,
+    "REVIEW_DECISION_INVALID",
+    "Proposal is superseded",
+  );
   if (decision === "Rejected")
-    requireThat(reason.trim(), "Rejection requires a reason");
+    requireThat(
+      reason.trim(),
+      "REVIEW_DECISION_INVALID",
+      "Rejection requires a reason",
+    );
   if (decision === "Approved") validateEdit(review.snapshot, p.current);
   if (decision === "Approved")
     requireThat(
       !semanticBlock(review, p),
+      "REVIEW_DECISION_INVALID",
       semanticBlock(review, p) || "Semantic review required",
     );
   return update(review, id, (p) => ({ ...p, decision, reason }));
@@ -458,10 +540,18 @@ export function decideFinding(
   reason = "",
 ): Review {
   const f = review.findings.find((f) => f.id === id);
-  requireThat(f, "Unknown finding");
-  requireThat(decision !== "Approved", "Approve a proposal, not a finding");
+  requireThat(f, "PROPOSAL_REFERENCE_INVALID", "Unknown finding");
+  requireThat(
+    decision !== "Approved",
+    "REVIEW_DECISION_INVALID",
+    "Approve a proposal, not a finding",
+  );
   if (decision === "Rejected")
-    requireThat(reason.trim(), "Rejection requires a reason");
+    requireThat(
+      reason.trim(),
+      "REVIEW_DECISION_INVALID",
+      "Rejection requires a reason",
+    );
   let next = {
     ...review,
     findings: review.findings.map((f) =>
@@ -479,10 +569,15 @@ export function mergeProposals(
   ids: string[],
   text: string,
 ): Review {
-  requireThat(new Set(ids).size >= 2, "Choose two or more proposals");
+  requireThat(
+    new Set(ids).size >= 2,
+    "REVIEW_DECISION_INVALID",
+    "Choose two or more proposals",
+  );
   const sources = ids.map((id) => get(review, id));
   requireThat(
     sources.every((p) => !p.superseded),
+    "REVIEW_DECISION_INVALID",
     "Cannot merge superseded proposals",
   );
   const start = Math.min(...sources.map((p) => p.current.start)),

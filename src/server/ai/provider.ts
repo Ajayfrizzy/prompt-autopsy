@@ -1,4 +1,7 @@
-import { domainValidationCategory } from "../../domain/validation-category";
+import {
+  domainValidationCategory,
+  domainValidationLocation,
+} from "../../domain/validation-category";
 import { z } from "zod";
 import type { InputTokenCountParams } from "openai/resources/responses/input-tokens";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
@@ -208,6 +211,7 @@ export async function analyze(
         .safeParse(response._request_id);
       console.warn("Prompt Autopsy provider validation", {
         stage,
+        ...(stage === "domain" ? domainValidationLocation(error) : {}),
         domainCategory:
           stage === "domain" ? domainValidationCategory(error) : undefined,
         status: status.success ? status.data : "unknown",

@@ -157,7 +157,8 @@ describe("offline Structured Output schemas", () => {
   });
   it("requires a limitation for limited coverage", () => {
     const value = example();
-    value.coverage = { status: "limited", reason: null };
+    // Deliberately malformed external payload.
+    Object.assign(value, { coverage: { status: "limited", reason: null } });
     expect(() => parseAnalysisWire(value)).toThrow();
     value.coverage.reason =
       "Additional findings exceed supported output capacity.";

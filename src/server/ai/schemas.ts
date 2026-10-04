@@ -1,3 +1,8 @@
+import {
+  DomainValidationError,
+  type DomainValidationCode,
+  withDomainLocation,
+} from "../../domain/validation-category";
 import { z } from "zod";
 import { zodTextFormat } from "openai/helpers/zod";
 
@@ -67,51 +72,71 @@ export const proposalWireSchema = z.union([
   }),
 ]);
 
-export const analysisWireSchema = z.strictObject({
-  summary: text(600),
-  coverage: z.strictObject({
-    status: z.enum(["within_capacity", "limited"]),
+const coverageSchema = z.union([
+  z.strictObject({
+    status: z.literal("within_capacity"),
     reason: text(300).nullable(),
   }),
-  findings: z
+  z.strictObject({ status: z.literal("limited"), reason: text(300) }),
+]);
+const comparisonSchema = z.union([
+  z.strictObject({
+    relation: z.literal("no_relevant_rule"),
+    rules: z.array(ruleEvidence).max(0),
+    reasoning: text(400),
+  }),
+  z.strictObject({
+    relation: z.enum(["equivalent", "possible_conflict", "related"]),
+    rules: z.array(ruleEvidence).min(1).max(2),
+    reasoning: text(400),
+  }),
+]);
+const findingFields = {
+  key,
+  title: text(120),
+  documentedRequirement: observation.nullable(),
+  hypotheses: z
     .array(
       z.strictObject({
-        key,
-        title: text(120),
-        evidenceState: z.enum(["supported", "insufficient"]),
-        observations: z.array(observation).max(3),
-        documentedRequirement: observation.nullable(),
-        hypotheses: z
-          .array(
-            z.strictObject({
-              text: text(400),
-              supportingEvidence: z.array(messageEvidence).max(2),
-              limitation: text(400),
-            }),
-          )
-          .max(2),
-        missingEvidence: z.array(text(240)).max(3),
-        comparisons: z
-          .array(
-            z.strictObject({
-              relation: z.enum([
-                "equivalent",
-                "possible_conflict",
-                "related",
-                "no_relevant_rule",
-              ]),
-              rules: z.array(ruleEvidence).max(2),
-              reasoning: text(400),
-            }),
-          )
-          .max(3),
-        recommendation: z.enum(["add", "edit", "no_change", "needs_evidence"]),
-        rationale: text(400),
-        proposalKey: key.nullable(),
+        text: text(400),
+        supportingEvidence: z.array(messageEvidence).max(2),
+        limitation: text(400),
       }),
     )
-    .min(1)
-    .max(4),
+    .max(2),
+  comparisons: z.array(comparisonSchema).max(3),
+  rationale: text(400),
+};
+const supportedFields = {
+  ...findingFields,
+  evidenceState: z.literal("supported"),
+  observations: z.array(observation).min(1).max(3),
+  missingEvidence: z.array(text(240)).max(3),
+};
+const findingSchema = z.union([
+  z.strictObject({
+    ...supportedFields,
+    recommendation: z.enum(["add", "edit"]),
+    proposalKey: key,
+  }),
+  z.strictObject({
+    ...supportedFields,
+    recommendation: z.enum(["no_change", "needs_evidence"]),
+    proposalKey: z.null(),
+  }),
+  z.strictObject({
+    ...findingFields,
+    evidenceState: z.literal("insufficient"),
+    observations: z.array(observation).max(3),
+    missingEvidence: z.array(text(240)).min(1).max(3),
+    recommendation: z.enum(["no_change", "needs_evidence"]),
+    proposalKey: z.null(),
+  }),
+]);
+export const analysisWireSchema = z.strictObject({
+  summary: text(600),
+  coverage: coverageSchema,
+  findings: z.array(findingSchema).min(1).max(4),
   timeline: z
     .array(
       z.strictObject({
@@ -143,6 +168,24 @@ export const analysisWireSchema = z.strictObject({
   limitations: z.array(text(300)).max(4),
 });
 
+const semanticComparisonFields = {
+  relation: z.enum(["possible_duplicate", "possible_conflict"]),
+  reasoning: text(300),
+};
+const semanticComparison = z.union([
+  z.strictObject({
+    ...semanticComparisonFields,
+    ruleIds: z.array(ruleId).min(1).max(4),
+    proposalIds: z.array(applicationId).max(4),
+  }),
+  z.strictObject({
+    ...semanticComparisonFields,
+    ruleIds: z.array(ruleId).max(0),
+    proposalIds: z.array(applicationId).min(1).max(4),
+  }),
+]);
+// Root must remain an object for Structured Outputs. Status/comparison coupling
+// stays deterministic; nested comparison branches ensure at least one target.
 export const semanticRecheckWireSchema = z.strictObject({
   status: z.enum([
     "no_issue",
@@ -150,16 +193,7 @@ export const semanticRecheckWireSchema = z.strictObject({
     "possible_conflict",
     "uncertain",
   ]),
-  comparisons: z
-    .array(
-      z.strictObject({
-        relation: z.enum(["possible_duplicate", "possible_conflict"]),
-        ruleIds: z.array(ruleId).max(4),
-        proposalIds: z.array(applicationId).max(4),
-        reasoning: text(300),
-      }),
-    )
-    .max(8),
+  comparisons: z.array(semanticComparison).max(8),
   reasoning: text(500),
   limitations: z.array(text(240)).max(3),
 });
@@ -187,7 +221,10 @@ function checkCodePoints(value: unknown, schema: JsonSchema): void {
     schema.maxLength !== undefined &&
     [...value].length > schema.maxLength
   )
-    throw new Error("Structured output exceeds a text limit");
+    throw new DomainValidationError(
+      "STRUCTURED_TEXT_LIMIT",
+      "Structured output exceeds a text limit",
+    );
   if (schema.anyOf)
     for (const branch of schema.anyOf) checkCodePoints(value, branch);
   if (Array.isArray(value) && schema.items)
@@ -213,9 +250,10 @@ export function validateWireShape(
 }
 function requireCondition(
   condition: boolean,
+  code: DomainValidationCode,
   message: string,
 ): asserts condition {
-  if (!condition) throw new Error(message);
+  if (!condition) throw new DomainValidationError(code, message);
 }
 function unique(values: string[]): boolean {
   return new Set(values).size === values.length;
@@ -226,9 +264,17 @@ function unique(values: string[]): boolean {
 export function parseAnalysisWire(value: unknown): AnalysisWire {
   const result = analysisWireSchema.parse(value);
   checkCodePoints(result, analysisTextFormat.schema as JsonSchema);
-  requireCondition(
-    result.coverage.status !== "limited" || result.coverage.reason !== null,
-    "Limited coverage requires a reason",
+  return withDomainLocation({ domainArea: "analysis" }, () =>
+    validateAnalysisContract(result),
+  );
+}
+export function validateAnalysisContract(result: AnalysisWire): AnalysisWire {
+  withDomainLocation({ domainArea: "coverage" }, () =>
+    requireCondition(
+      result.coverage.status !== "limited" || result.coverage.reason !== null,
+      "COVERAGE_REASON_REQUIRED",
+      "Limited coverage requires a reason",
+    ),
   );
   const findings = new Map(
     result.findings.map((finding) => [finding.key, finding]),
@@ -239,97 +285,137 @@ export function parseAnalysisWire(value: unknown): AnalysisWire {
   requireCondition(
     findings.size === result.findings.length &&
       proposals.size === result.proposals.length,
+    "PROPOSAL_REFERENCE_INVALID",
     "Duplicate temporary key",
   );
-  for (const finding of result.findings) {
-    requireCondition(
-      finding.evidenceState !== "supported" || finding.observations.length > 0,
-      "Supported finding needs an observation",
-    );
-    requireCondition(
-      finding.evidenceState !== "insufficient" ||
-        (finding.missingEvidence.length > 0 &&
-          finding.proposalKey === null &&
-          ["needs_evidence", "no_change"].includes(finding.recommendation)),
-      "Insufficient finding cannot propose a correction",
-    );
-    const changesRules =
-      finding.recommendation === "add" || finding.recommendation === "edit";
-    requireCondition(
-      changesRules
-        ? finding.proposalKey !== null && proposals.has(finding.proposalKey)
-        : finding.proposalKey === null,
-      "Invalid finding proposal reference",
-    );
-    for (const comparison of finding.comparisons)
+  result.findings.forEach((finding, findingIndex) =>
+    withDomainLocation({ domainArea: "finding", findingIndex }, () => {
       requireCondition(
-        (comparison.relation === "no_relevant_rule") ===
-          (comparison.rules.length === 0),
-        "Rule comparison requires matching references",
+        finding.evidenceState !== "supported" ||
+          finding.observations.length > 0,
+        "SUPPORTED_FINDING_MISSING_OBSERVATION",
+        "Supported finding needs an observation",
       );
-  }
-  for (const item of [...result.timeline, ...result.proposals])
-    requireCondition(
-      unique(item.findingKeys) &&
-        item.findingKeys.every((id) => findings.has(id)),
-      "Invalid finding keys",
-    );
-  for (const proposal of result.proposals) {
-    requireCondition(
-      proposal.findingKeys.every(
-        (id) => findings.get(id)?.proposalKey === proposal.key,
+      requireCondition(
+        finding.evidenceState !== "insufficient" ||
+          (finding.missingEvidence.length > 0 &&
+            finding.proposalKey === null &&
+            ["needs_evidence", "no_change"].includes(finding.recommendation)),
+        "INSUFFICIENT_FINDING_INVALID_RECOMMENDATION",
+        "Insufficient finding cannot propose a correction",
+      );
+      const changesRules =
+        finding.recommendation === "add" || finding.recommendation === "edit";
+      requireCondition(
+        changesRules
+          ? finding.proposalKey !== null && proposals.has(finding.proposalKey)
+          : finding.proposalKey === null,
+        "PROPOSAL_REFERENCE_INVALID",
+        "Invalid finding proposal reference",
+      );
+      finding.comparisons.forEach((comparison, comparisonIndex) =>
+        withDomainLocation(
+          { domainArea: "finding.comparison", findingIndex, comparisonIndex },
+          () =>
+            requireCondition(
+              (comparison.relation === "no_relevant_rule") ===
+                (comparison.rules.length === 0),
+              "RULE_COMPARISON_REFERENCE_MISMATCH",
+              "Rule comparison requires matching references",
+            ),
+        ),
+      );
+    }),
+  );
+  for (const [domainArea, items] of [
+    ["timeline", result.timeline],
+    ["proposal", result.proposals],
+  ] as const) {
+    items.forEach((item, index) =>
+      withDomainLocation(
+        domainArea === "timeline"
+          ? { domainArea, timelineIndex: index }
+          : { domainArea, proposalIndex: index },
+        () =>
+          requireCondition(
+            unique(item.findingKeys) &&
+              item.findingKeys.every((id) => findings.has(id)),
+            "PROPOSAL_REFERENCE_INVALID",
+            "Invalid finding keys",
+          ),
       ),
-      "Proposal and finding references disagree",
     );
-    requireCondition(
-      result.findings
-        .filter((finding) => finding.proposalKey === proposal.key)
-        .every((finding) => proposal.findingKeys.includes(finding.key)),
-      "Proposal omits associated finding",
-    );
-    requireCondition(
-      new TextEncoder().encode(proposal.replacementText).length <= 4_096,
-      "Replacement exceeds byte limit",
-    );
-    const target = proposal.target;
-    if (proposal.operation === "replace")
-      requireCondition(
-        target.placement === "replace" &&
-          target.ruleId !== null &&
-          target.quote !== null &&
-          target.occurrence !== null,
-        "Replacement needs an exact target",
-      );
-    else if (target.placement === "end_of_file")
-      requireCondition(
-        target.ruleId === null &&
-          target.quote === null &&
-          target.occurrence === null,
-        "End-of-file insertion has no passage target",
-      );
-    else
-      requireCondition(
-        ["before", "after"].includes(target.placement) &&
-          target.ruleId !== null &&
-          target.quote === null &&
-          target.occurrence === null,
-        "Insertion needs a passage boundary",
-      );
   }
+  result.proposals.forEach((proposal, proposalIndex) =>
+    withDomainLocation({ domainArea: "proposal", proposalIndex }, () => {
+      requireCondition(
+        proposal.findingKeys.every(
+          (id) => findings.get(id)?.proposalKey === proposal.key,
+        ),
+        "PROPOSAL_REFERENCE_INVALID",
+        "Proposal and finding references disagree",
+      );
+      requireCondition(
+        result.findings
+          .filter((finding) => finding.proposalKey === proposal.key)
+          .every((finding) => proposal.findingKeys.includes(finding.key)),
+        "PROPOSAL_REFERENCE_INVALID",
+        "Proposal omits associated finding",
+      );
+      requireCondition(
+        new TextEncoder().encode(proposal.replacementText).length <= 4_096,
+        "REPLACEMENT_LIMIT_INVALID",
+        "Replacement exceeds byte limit",
+      );
+      const target = proposal.target;
+      if (proposal.operation === "replace")
+        requireCondition(
+          target.placement === "replace" &&
+            target.ruleId !== null &&
+            target.quote !== null &&
+            target.occurrence !== null,
+          "EDIT_ANCHOR_INVALID",
+          "Replacement needs an exact target",
+        );
+      else if (target.placement === "end_of_file")
+        requireCondition(
+          target.ruleId === null &&
+            target.quote === null &&
+            target.occurrence === null,
+          "EDIT_ANCHOR_INVALID",
+          "End-of-file insertion has no passage target",
+        );
+      else
+        requireCondition(
+          ["before", "after"].includes(target.placement) &&
+            target.ruleId !== null &&
+            target.quote === null &&
+            target.occurrence === null,
+          "EDIT_ANCHOR_INVALID",
+          "Insertion needs a passage boundary",
+        );
+    }),
+  );
   const pairs = new Set<string>();
-  for (const relation of result.proposalRelations) {
-    const pair = [relation.leftProposalKey, relation.rightProposalKey]
-      .sort()
-      .join(":");
-    requireCondition(
-      relation.leftProposalKey !== relation.rightProposalKey &&
-        proposals.has(relation.leftProposalKey) &&
-        proposals.has(relation.rightProposalKey) &&
-        !pairs.has(pair),
-      "Invalid proposal relation pair",
-    );
-    pairs.add(pair);
-  }
+  result.proposalRelations.forEach((relation, relationIndex) =>
+    withDomainLocation(
+      { domainArea: "proposal.relation", relationIndex },
+      () => {
+        const pair = [relation.leftProposalKey, relation.rightProposalKey]
+          .sort()
+          .join(":");
+        requireCondition(
+          relation.leftProposalKey !== relation.rightProposalKey &&
+            proposals.has(relation.leftProposalKey) &&
+            proposals.has(relation.rightProposalKey) &&
+            !pairs.has(pair),
+          "PROPOSAL_REFERENCE_INVALID",
+          "Invalid proposal relation pair",
+        );
+        pairs.add(pair);
+      },
+    ),
+  );
   return result;
 }
 
@@ -339,22 +425,40 @@ export function parseSemanticRecheckWire(
 ): SemanticRecheckWire {
   const result = semanticRecheckWireSchema.parse(value);
   checkCodePoints(result, semanticRecheckTextFormat.schema as JsonSchema);
-  for (const comparison of result.comparisons) {
-    requireCondition(
-      comparison.ruleIds.length + comparison.proposalIds.length > 0,
-      "Comparison needs a target",
-    );
-    requireCondition(
-      unique(comparison.ruleIds) &&
-        unique(comparison.proposalIds) &&
-        comparison.ruleIds.every((id) => context.ruleIds.includes(id)) &&
-        comparison.proposalIds.every((id) => context.proposalIds.includes(id)),
-      "Unknown or duplicated comparison reference",
-    );
-  }
+  return withDomainLocation({ domainArea: "semantic" }, () =>
+    validateSemanticContract(result, context),
+  );
+}
+export function validateSemanticContract(
+  result: SemanticRecheckWire,
+  context: { ruleIds: readonly string[]; proposalIds: readonly string[] },
+): SemanticRecheckWire {
+  result.comparisons.forEach((comparison, comparisonIndex) =>
+    withDomainLocation(
+      { domainArea: "semantic.comparison", comparisonIndex },
+      () => {
+        requireCondition(
+          comparison.ruleIds.length + comparison.proposalIds.length > 0,
+          "SEMANTIC_TARGET_REQUIRED",
+          "Comparison needs a target",
+        );
+        requireCondition(
+          unique(comparison.ruleIds) &&
+            unique(comparison.proposalIds) &&
+            comparison.ruleIds.every((id) => context.ruleIds.includes(id)) &&
+            comparison.proposalIds.every((id) =>
+              context.proposalIds.includes(id),
+            ),
+          "SEMANTIC_REFERENCE_INVALID",
+          "Unknown or duplicated comparison reference",
+        );
+      },
+    ),
+  );
   if (result.status === "no_issue")
     requireCondition(
       result.comparisons.length === 0,
+      "SEMANTIC_NO_ISSUE_HAS_COMPARISONS",
       "No-issue result cannot contain issues",
     );
   if (
@@ -365,6 +469,7 @@ export function parseSemanticRecheckWire(
       result.comparisons.some(
         (comparison) => comparison.relation === result.status,
       ),
+      "SEMANTIC_STATUS_MISMATCH",
       "Issue status needs matching comparison",
     );
   requireCondition(
@@ -372,6 +477,7 @@ export function parseSemanticRecheckWire(
       !result.comparisons.some(
         (comparison) => comparison.relation === "possible_conflict",
       ),
+    "SEMANTIC_CONFLICT_PRECEDENCE",
     "Conflict takes precedence over duplicate",
   );
   return result;

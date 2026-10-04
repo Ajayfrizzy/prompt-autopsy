@@ -111,7 +111,13 @@ describe("reviewed baseline enforcement", () => {
   });
   it("blocks same-passage approved changes and creates an unapproved merged revision", () => {
     const a = fixture();
-    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.findings.push({
+      ...a.findings[0],
+      evidenceState: "supported",
+      recommendation: "edit",
+      key: "f2",
+      proposalKey: "p2",
+    });
     a.proposals.push({
       ...a.proposals[0],
       key: "p2",
@@ -145,7 +151,13 @@ describe("reviewed baseline enforcement", () => {
   });
   it("new approved peers stale targeted coverage without blocking independent original changes", () => {
     const a = fixture();
-    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.findings.push({
+      ...a.findings[0],
+      evidenceState: "supported",
+      recommendation: "edit",
+      key: "f2",
+      proposalKey: "p2",
+    });
     a.proposals.push({
       ...a.proposals[0],
       operation: "replace",
@@ -184,7 +196,13 @@ describe("reviewed baseline enforcement", () => {
   });
   it("shows a pending targeted conflict without excluding its approved peer", () => {
     const a = fixture();
-    a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
+    a.findings.push({
+      ...a.findings[0],
+      evidenceState: "supported",
+      recommendation: "edit",
+      key: "f2",
+      proposalKey: "p2",
+    });
     a.proposals.push({
       ...a.proposals[0],
       operation: "replace",
