@@ -28,6 +28,45 @@ const observation = z.strictObject({
 });
 const findingKeys = z.array(key).min(1).max(4);
 
+const proposalFields = {
+  key,
+  findingKeys,
+  rationale: text(400),
+  replacementText: text(1_200),
+};
+export const proposalWireSchema = z.union([
+  z.strictObject({
+    ...proposalFields,
+    operation: z.literal("replace"),
+    target: z.strictObject({
+      placement: z.literal("replace"),
+      ruleId,
+      quote: text(1_200),
+      occurrence,
+    }),
+  }),
+  z.strictObject({
+    ...proposalFields,
+    operation: z.literal("insert"),
+    target: z.strictObject({
+      placement: z.enum(["before", "after"]),
+      ruleId,
+      quote: z.null(),
+      occurrence: z.null(),
+    }),
+  }),
+  z.strictObject({
+    ...proposalFields,
+    operation: z.literal("insert"),
+    target: z.strictObject({
+      placement: z.literal("end_of_file"),
+      ruleId: z.null(),
+      quote: z.null(),
+      occurrence: z.null(),
+    }),
+  }),
+]);
+
 export const analysisWireSchema = z.strictObject({
   summary: text(600),
   coverage: z.strictObject({
@@ -90,23 +129,7 @@ export const analysisWireSchema = z.strictObject({
       }),
     )
     .max(8),
-  proposals: z
-    .array(
-      z.strictObject({
-        key,
-        findingKeys,
-        rationale: text(400),
-        operation: z.enum(["insert", "replace"]),
-        target: z.strictObject({
-          ruleId: ruleId.nullable(),
-          quote: text(1_200).nullable(),
-          occurrence: occurrence.nullable(),
-          placement: z.enum(["before", "after", "end_of_file", "replace"]),
-        }),
-        replacementText: text(1_200),
-      }),
-    )
-    .max(4),
+  proposals: z.array(proposalWireSchema).max(4),
   proposalRelations: z
     .array(
       z.strictObject({

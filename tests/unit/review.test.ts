@@ -148,6 +148,7 @@ describe("reviewed baseline enforcement", () => {
     a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
     a.proposals.push({
       ...a.proposals[0],
+      operation: "replace",
       key: "p2",
       findingKeys: ["f2"],
       target: {
@@ -186,6 +187,7 @@ describe("reviewed baseline enforcement", () => {
     a.findings.push({ ...a.findings[0], key: "f2", proposalKey: "p2" });
     a.proposals.push({
       ...a.proposals[0],
+      operation: "replace",
       key: "p2",
       findingKeys: ["f2"],
       target: {

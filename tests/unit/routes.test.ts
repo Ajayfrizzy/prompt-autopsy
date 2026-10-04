@@ -343,7 +343,7 @@ describe("historical passage context and exact anchors (offline)", () => {
       },
     ],
     [
-      "EDIT_ANCHOR_INVALID",
+      "PROVIDER_SCHEMA_INVALID",
       (a: ReturnType<typeof historicalRulesAnalysis>) => {
         a.proposals[0].target.quote = null;
       },
@@ -372,14 +372,18 @@ describe("historical passage context and exact anchors (offline)", () => {
         );
         expect(response.status).toBe(502);
         expect(await response.json()).toMatchObject({
-          code: "ANALYSIS_CONTRACT_INVALID",
+          code:
+            category === "PROVIDER_SCHEMA_INVALID"
+              ? category
+              : "ANALYSIS_CONTRACT_INVALID",
           usage: { inputTokens: 100, outputTokens: 120 },
         });
         expect(log).toHaveBeenCalledWith(
           "Prompt Autopsy provider validation",
           expect.objectContaining({
-            stage: "domain",
-            domainCategory: category,
+            stage: category === "PROVIDER_SCHEMA_INVALID" ? "schema" : "domain",
+            domainCategory:
+              category === "PROVIDER_SCHEMA_INVALID" ? undefined : category,
           }),
         );
         expect(JSON.stringify(log.mock.calls)).not.toMatch(

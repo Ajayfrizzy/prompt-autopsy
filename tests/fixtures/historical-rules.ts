@@ -1,6 +1,9 @@
 import { productScopeAnalysis, productScopeSnapshot } from "./product-scope";
 import { segmentRules } from "../../src/domain/inputs";
-import type { AnalysisWire } from "../../src/server/ai/schemas";
+import {
+  proposalWireSchema,
+  type AnalysisWire,
+} from "../../src/server/ai/schemas";
 // Synthetic historical-file shape and authored provider output, not live results.
 export const historicalRulesSnapshot = {
   ...productScopeSnapshot,
@@ -20,7 +23,7 @@ export function historicalRulesAnalysis(
       placement === "replace" ? "edit" : "add";
     result.findings[0].proposalKey = "scope_rule";
     result.proposals = [
-      {
+      proposalWireSchema.parse({
         key: "scope_rule",
         findingKeys: ["product_scope"],
         rationale: "Controlled edit exercise.",
@@ -32,7 +35,7 @@ export function historicalRulesAnalysis(
           placement,
         },
         replacementText: "\nVerify action scope explicitly.\n",
-      },
+      }),
     ];
   }
   return result;
