@@ -411,6 +411,13 @@ export function Results() {
                     )
                     .map((p) => (
                       <div key={p.id} className="proposal">
+                        <DecisionStatus
+                          decision={p.decision}
+                          eligible={plan.eligible.some(
+                            (item) => item.id === p.id,
+                          )}
+                          stale={p.semantic.state === "stale"}
+                        />
                         <div className="compare-grid">
                           <div>
                             <h3>Reviewed historical baseline</h3>
@@ -481,7 +488,9 @@ export function Results() {
                           <button
                             className="primary compact"
                             disabled={
-                              !!state.active || !!semanticBlock(review, p)
+                              !!state.active ||
+                              p.decision === "Approved" ||
+                              !!semanticBlock(review, p)
                             }
                             onClick={() =>
                               guard(() =>
@@ -494,10 +503,15 @@ export function Results() {
                               )
                             }
                           >
-                            Approve instruction <Check size={14} />
+                            {p.decision === "Approved"
+                              ? "Approved"
+                              : "Approve instruction"}{" "}
+                            <Check size={14} />
                           </button>
                           <button
-                            disabled={!!state.active}
+                            disabled={
+                              !!state.active || p.decision === "Rejected"
+                            }
                             onClick={() =>
                               guard(() =>
                                 decideProposal(
@@ -509,10 +523,13 @@ export function Results() {
                               )
                             }
                           >
-                            Reject
+                            {p.decision === "Rejected" ? "Rejected" : "Reject"}
                           </button>
                           <button
-                            disabled={!!state.active}
+                            disabled={
+                              !!state.active ||
+                              p.decision === "No change accepted"
+                            }
                             onClick={() =>
                               guard(() =>
                                 decideProposal(
@@ -524,10 +541,14 @@ export function Results() {
                               )
                             }
                           >
-                            Accept no change
+                            {p.decision === "No change accepted"
+                              ? "No change accepted"
+                              : "Accept no change"}
                           </button>
                           <button
-                            disabled={!!state.active}
+                            disabled={
+                              !!state.active || p.decision === "Needs evidence"
+                            }
                             onClick={() =>
                               guard(() =>
                                 decideProposal(
@@ -576,6 +597,7 @@ export function Results() {
                     (p) => p.findingIds.includes(selected.id) && !p.superseded,
                   ) && (
                     <div className="no-change">
+                      <DecisionStatus decision={selected.decision} />
                       <h3>
                         {selected.source.recommendation === "no_change"
                           ? "No rules change recommended"
@@ -593,6 +615,29 @@ export function Results() {
                       </label>
                       <div className="actions">
                         <button
+                          disabled={
+                            !!state.active || selected.decision === "Rejected"
+                          }
+                          onClick={() =>
+                            guard(() =>
+                              decideFinding(
+                                review,
+                                selected.id,
+                                "Rejected",
+                                reason,
+                              ),
+                            )
+                          }
+                        >
+                          {selected.decision === "Rejected"
+                            ? "Rejected"
+                            : "Reject"}
+                        </button>
+                        <button
+                          disabled={
+                            !!state.active ||
+                            selected.decision === "No change accepted"
+                          }
                           onClick={() =>
                             guard(() =>
                               decideFinding(
@@ -604,9 +649,15 @@ export function Results() {
                             )
                           }
                         >
-                          Accept no change
+                          {selected.decision === "No change accepted"
+                            ? "No change accepted"
+                            : "Accept no change"}
                         </button>
                         <button
+                          disabled={
+                            !!state.active ||
+                            selected.decision === "Needs evidence"
+                          }
                           onClick={() =>
                             guard(() =>
                               decideFinding(
@@ -940,4 +991,48 @@ function Highlighted({
   } catch {
     return <>{text}</>;
   }
+}
+
+function DecisionStatus({
+  decision,
+  eligible = false,
+  stale = false,
+}: {
+  decision: Decision;
+  eligible?: boolean;
+  stale?: boolean;
+}) {
+  const label =
+    decision === "Approved"
+      ? eligible
+        ? "APPROVED · READY FOR EXPORT"
+        : "APPROVED · NOT READY FOR EXPORT"
+      : decision.toUpperCase();
+  const message =
+    decision === "Approved"
+      ? eligible
+        ? "Instruction approved and ready for export."
+        : "Approval recorded. This instruction is not currently eligible for export; review the outstanding requirements."
+      : decision === "Rejected"
+        ? "Rejection recorded. No instruction change will be exported."
+        : decision === "No change accepted"
+          ? "No-change decision recorded. No instruction change will be exported."
+          : decision === "Needs evidence"
+            ? "Needs evidence recorded. No instruction change will be exported."
+            : stale
+              ? "Wording changed. Any previous approval is no longer current; semantic recheck and explicit approval are required."
+              : "No decision recorded yet.";
+  return (
+    <div
+      className="notice"
+      role="status"
+      aria-label="Recorded decision"
+      aria-atomic="true"
+    >
+      <div>
+        <strong>{label}</strong>
+        <p>{message}</p>
+      </div>
+    </div>
+  );
 }

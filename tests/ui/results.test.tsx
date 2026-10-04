@@ -230,9 +230,14 @@ describe("evidence, decisions and exports", () => {
     expect(downloads).toHaveLength(1);
     expect(downloads[0].name).toBe("AGENTS.md");
     expect(await readBlob(downloads[0].blob)).toBe("Keep logs.\n" + suggested);
-    expect(screen.getByRole("status")).toHaveTextContent(
-      "Approval is not verification",
-    );
+    expect(
+      screen
+        .getAllByRole("status")
+        .some((status) =>
+          status.textContent?.includes("Approval is not verification"),
+        ),
+    ).toBe(true);
+
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
   it("revokes edited approval and requires a bound targeted recheck plus new approval", async () => {
@@ -244,6 +249,18 @@ describe("evidence, decisions and exports", () => {
     fireEvent.change(screen.getByLabelText("Proposed instruction"), {
       target: { value: revised },
     });
+    expect(
+      screen.queryByRole("button", { name: "Approved" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("APPROVED · READY FOR EXPORT"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("PENDING");
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("previous approval is no longer current");
     expect(screen.getByText("Stale — recheck required")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Approve instruction/ }),
@@ -305,4 +322,89 @@ describe("evidence, decisions and exports", () => {
     expect(report).toContain(requirement);
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+describe("local recorded decision feedback", () => {
+  it("confirms approval, prevents repeat approval and permits needs-evidence reversal without requests", async () => {
+    await investigate();
+    fireEvent.click(screen.getByRole("button", { name: /Review decisions/ }));
+    const approve = screen.getByRole("button", { name: /Approve instruction/ });
+    expect(approve).toBeEnabled();
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("PENDING");
+    fireEvent.click(approve);
+    expect(
+      screen.queryByRole("button", { name: /Approve instruction/ }),
+    ).not.toBeInTheDocument();
+    const recorded = screen.getByRole("button", {
+      name: "Approved",
+    });
+    expect(recorded).toBeDisabled();
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("APPROVED · READY FOR EXPORT");
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("Instruction approved and ready for export.");
+    expect(screen.getByText("1 CHANGES READY")).toBeInTheDocument();
+    fireEvent.click(recorded);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Needs evidence" }));
+    expect(
+      screen.getByRole("button", { name: "Needs evidence" }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("status", { name: "Recorded decision" }),
+    ).toHaveTextContent("NEEDS EVIDENCE");
+    expect(screen.queryByText("1 CHANGES READY")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Download AGENTS.md" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Approve instruction/ }),
+    ).toBeEnabled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+  it.each([false, true])(
+    "shows reversible rejection/no-change/evidence decisions (no proposal: %s)",
+    async (noChange) => {
+      await investigate(noChange);
+      fireEvent.click(screen.getByRole("button", { name: /Review decisions/ }));
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Rejection requires a reason",
+      );
+      expect(
+        screen.getByRole("status", { name: "Recorded decision" }),
+      ).toHaveTextContent("PENDING");
+      fireEvent.change(
+        screen.getByLabelText(
+          noChange ? "No-change rationale" : "Decision reason",
+        ),
+        { target: { value: "Not appropriate for this incident." } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Reject" }));
+      expect(screen.getByRole("button", { name: "Rejected" })).toBeDisabled();
+      expect(
+        screen.getByRole("status", { name: "Recorded decision" }),
+      ).toHaveTextContent("REJECTED");
+      fireEvent.click(screen.getByRole("button", { name: "Accept no change" }));
+      expect(
+        screen.getByRole("button", { name: "No change accepted" }),
+      ).toBeDisabled();
+      expect(
+        screen.getByRole("status", { name: "Recorded decision" }),
+      ).toHaveTextContent("NO CHANGE ACCEPTED");
+      expect(screen.getByRole("button", { name: "Reject" })).toBeEnabled();
+      fireEvent.click(screen.getByRole("button", { name: "Needs evidence" }));
+      expect(
+        screen.getByRole("status", { name: "Recorded decision" }),
+      ).toHaveTextContent("NEEDS EVIDENCE");
+      expect(
+        screen.getByRole("button", { name: "Accept no change" }),
+      ).toBeEnabled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    },
+  );
 });
