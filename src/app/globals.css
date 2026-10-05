@@ -646,6 +646,20 @@ mark {
   color: #d9c393;
   font-size: 12px;
 }
+.proposal,
+.no-change {
+  margin-top: 20px;
+}
+.decision-status > div {
+  min-width: 0;
+}
+.decision-status strong {
+  display: block;
+  margin-bottom: 6px;
+}
+.decision-status {
+  overflow-wrap: anywhere;
+}
 .proposal > label,
 .no-change label {
   font-size: 11px;

@@ -1024,7 +1024,7 @@ function DecisionStatus({
               : "No decision recorded yet.";
   return (
     <div
-      className="notice"
+      className="notice decision-status"
       role="status"
       aria-label="Recorded decision"
       aria-atomic="true"
