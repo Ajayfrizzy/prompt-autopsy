@@ -1,392 +1,184 @@
 # Prompt Autopsy
 
-Prompt Autopsy is an evidence-backed investigation tool for failed AI coding sessions.
+**Investigate what went wrong with your AI coding session—before adding another permanent rule.**
 
-Instead of treating every coding-agent failure as a reason to add more instructions, Prompt Autopsy helps a developer reconstruct what happened, separate evidence from assumptions, compare the incident against the historical `AGENTS.md` or `CLAUDE.md`, and decide whether a rule should actually be added, edited, left unchanged, or deferred until more evidence is available.
-
-The core principle is:
+Prompt Autopsy helps developers trace a failed coding-agent session to exact transcript evidence, compare it with historical `AGENTS.md` or `CLAUDE.md` instructions, and review whether a rule should be added, edited, left unchanged, or deferred until more evidence is available.
 
 > AI interprets. Application code verifies. Developer decides.
 
+[Repository](https://github.com/Ajayfrizzy/prompt-autopsy) · [Transcript format](devpost/transcript-format.md) · [Fictional sample](public/samples/transcript.txt)
+
 ## The problem
 
-AI coding agents can produce fixes that look correct, pass automated checks, and still fail in a real browser or production-like environment.
+AI-generated implementations can pass automated checks and still fail during hands-on browser testing. Adding another instruction after every failure can turn an agent rules file into a collection of speculative, duplicate, or contradictory rules.
 
-When that happens, developers often respond by adding another instruction to an agent rules file.
+Prompt Autopsy provides a review process before those changes are made. It helps distinguish missing guidance from failures that existing instructions already addressed, while making gaps in the evidence visible.
 
-That creates a second problem: instruction files can slowly become collections of speculative rules written after individual failures, even when the existing guidance was already sufficient or the evidence does not justify a new rule.
+## What it does
 
-Prompt Autopsy provides a structured review process before those changes are made.
+Each investigation covers **one incident, one manually prepared session excerpt, and one historical rules file**. It produces an annotated timeline, evidence-backed findings, historical instruction comparisons, and proposed changes when justified.
 
-## What Prompt Autopsy does
-
-Prompt Autopsy investigates one coding incident at a time.
-
-The developer supplies:
-
-- a description of the observed incident;
-- a structured plain-text excerpt of the coding-agent session;
-- the historical `AGENTS.md` or `CLAUDE.md` that existed during that incident.
-
-Before AI processing, the developer reviews the exact inputs and can remove or redact sensitive material.
-
-After explicit consent, Prompt Autopsy analyzes the reviewed evidence and produces:
-
-- an annotated incident timeline;
-- evidence-backed findings;
-- documented requirements;
-- observations linked to exact transcript passages;
-- possible explanations kept separate from established facts;
-- missing-evidence warnings;
-- comparison against historical instructions;
-- an add, edit, no-change, or needs-evidence recommendation;
-- a proposed instruction change when justified.
-
-Nothing is automatically written back to a repository.
-
-The developer makes the final decision.
+Every finding links to reviewed source messages. Developers review and decide; nothing is automatically written to their repository.
 
 ## Who it is for
 
-Prompt Autopsy is designed for developers who use AI coding agents and maintain instruction files such as:
+Developers and teams using AI coding agents, especially those maintaining `AGENTS.md` or `CLAUDE.md` files who want to:
 
-- `AGENTS.md`
-- `CLAUDE.md`
-
-It is especially useful when:
-
-- an AI-generated implementation passed tests but failed during hands-on testing;
-- it is unclear whether the failure came from missing instructions or implementation judgment;
-- a developer wants evidence before adding another permanent agent rule;
-- historical instructions need to be reviewed against a real incident;
-- a team wants a record of why an instruction was accepted or rejected.
+- understand an implementation that failed despite passing tests;
+- distinguish overlooked guidance from missing or ambiguous instructions;
+- avoid accumulating unnecessary rules;
+- keep an evidence-linked record of instruction decisions.
 
 ## Workflow
 
+**Import → Privacy Review → Investigation → Decision & Export**
+
 ### 1. Import
 
-The developer describes one observed incident and imports:
-
-- a structured transcript;
-- the historical instruction file.
-
-Prompt Autopsy parses the transcript and assigns stable message references.
+Describe the observed failure and expected behaviour. Paste or upload a structured plain-text transcript, then supply the historical instruction file that existed during the incident. The parser validates message boundaries and assigns stable references such as `M001`.
 
 ### 2. Privacy Review
 
-The developer reviews every input before it leaves the browser.
-
-Transcript messages, incident text, and historical instructions can be edited or removed.
-
-Prompt Autopsy itself keeps the investigation in the current session only.
-
-Provider processing does not begin until the developer explicitly consents.
+Inspect and redact the incident description, transcript, and historical instructions locally. Explicit consent is required before reviewed content is sent to OpenAI for input-token counting and analysis. Import and Privacy Review do not send investigation content to the server.
 
 ### 3. Investigation
 
-Prompt Autopsy sends the reviewed context to OpenAI and asks the model to interpret the incident.
-
-The resulting analysis is not accepted blindly.
-
-Application code validates:
-
-- exact source-message references;
-- exact evidence quotes;
-- quote occurrences;
-- historical-rule references;
-- proposal relationships;
-- edit targets;
-- replacement boundaries;
-- structured-output invariants.
-
-If those checks fail, no partial investigation is accepted.
+Review the main conclusion, annotated timeline, and findings alongside an evidence inspector. OpenAI interprets the supplied evidence; application code checks the structured response, exact citations, proposal relationships, and edit targets. Invalid results fail closed—no partial findings are accepted.
 
 ### 4. Decision & Export
 
-The developer reviews any proposed instruction change and chooses whether to:
+Approve a proposed instruction, edit it for further review, reject it with a reason, accept no change, or mark it as needing more evidence.
 
-- approve it;
-- reject it;
-- accept no change;
-- mark it as needing more evidence.
-
-Only explicitly approved and export-eligible changes appear in the final revised rules file.
-
-Prompt Autopsy can export:
-
-- the revised `AGENTS.md` or `CLAUDE.md`;
-- a Markdown investigation report containing the evidence, findings, decisions, limitations, and proposal history.
+Download eligible changes as a revised `AGENTS.md` or `CLAUDE.md`, and export a Markdown investigation report with findings, evidence, decisions, limitations, and proposal history. Independent approved changes may be exported while other findings remain unresolved; export does not mean the investigation is complete or verified.
 
 ## Evidence-first design
 
-Prompt Autopsy deliberately separates different levels of certainty.
+| Section                           | What it means                                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Documented requirement            | What the reviewed transcript explicitly requested.                                                              |
+| Observed                          | Claims directly supported by exact reviewed evidence.                                                           |
+| Possible explanation              | An interpretation that is not established as fact.                                                              |
+| Evidence still needed             | Missing information needed for a stronger conclusion.                                                           |
+| Historical instruction comparison | Whether supplied historical guidance already addressed, related to, or conflicted with the proposed correction. |
 
-### Observed
-
-Claims directly supported by reviewed transcript evidence.
-
-### Possible explanation
-
-Interpretations that fit the evidence but are not established as fact.
-
-### Evidence still needed
-
-Information that would be required to make a stronger conclusion.
-
-### Historical instruction comparison
-
-A comparison between the finding and the rules that actually existed during the incident.
-
-Uploading a historical rules file proves only what that file contained. It does not prove that the coding agent loaded, read, or followed it.
+An uploaded historical rules file establishes its supplied contents—not that the coding agent loaded, read, or followed it. A transcript report of a successful test is evidence of that report, not an independently executed verification by Prompt Autopsy.
 
 ## Rule recommendations
 
-A finding can result in one of four outcomes.
+| Outcome        | When it is appropriate                                                                 |
+| -------------- | -------------------------------------------------------------------------------------- |
+| Add            | The supplied rules lack relevant guidance and the evidence supports a new instruction. |
+| Edit           | Existing guidance is relevant but needs a specific revision.                           |
+| No change      | Existing instructions already cover the issue, or another rule is not justified.       |
+| Needs evidence | The supplied material does not justify an instruction change yet.                      |
 
-### Add
+**No change is a valid successful outcome.** A later correction or successful test normally belongs to the original finding's history, rather than becoming a separate failure finding.
 
-A relevant instruction did not exist and the evidence supports adding one.
+## Developer control and semantic rechecks
 
-### Edit
+Only explicitly approved, export-eligible changes enter the revised rules file. Conflicting proposals are not silently merged. Approval does not guarantee that an instruction is correct, will be obeyed, or will prevent recurrence.
 
-Existing guidance is relevant but needs a specific revision.
+Editing or merging a proposal invalidates its previous approval and semantic comparison. A targeted semantic recheck is required before approval becomes available again. It compares the current wording with the **complete reviewed historical rules** and coexisting approved proposals; it does not resend the full transcript. If the required context cannot fit, the request is rejected rather than silently shortened.
 
-### No change
+Semantic findings remain advisory. The model cannot approve proposals or decide what is exportable.
 
-The existing instructions already cover the failure, or another rule would not be justified.
+## OpenAI usage and deterministic safeguards
 
-### Needs evidence
+Prompt Autopsy uses the **OpenAI Responses API**, model **`gpt-5.6-sol`**, with Zod-backed Structured Outputs. Credentials stay server-side. Investigation calls use standard processing, `store: false`, and no provider tools or autonomous code execution.
 
-The supplied material is insufficient to justify a permanent instruction change.
+AI handles semantic interpretation and suggestions. Deterministic application code verifies:
 
-Prompt Autopsy treats no-change as a valid successful outcome.
+- message and historical-rule IDs, exact quotes, and quote occurrences;
+- proposal/finding relationships and legal edit-target combinations;
+- exact edit anchors and Unicode/CRLF boundaries;
+- replacement character/UTF-8 limits and no-op edits;
+- semantic-review bindings, approval state, conflicts, and export eligibility.
 
-## Developer control
+Output is not fuzzy-matched, automatically repaired, or silently retried. Development diagnostics use safe typed codes and structural indexes rather than logging investigation contents. These safeguards validate structure and grounding; they do not prove every interpretation correct.
 
-Prompt Autopsy never automatically modifies the developer's repository.
+## Privacy and session-only state
 
-Approval is an explicit developer decision.
+Investigations live only in browser memory for the current session. There are no accounts, recovery storage, or investigation history. Refreshing or closing the session discards unfinished work; export what you want to keep. Browser-supported leave-page warnings are used where available.
 
-An approved proposal is marked as ready for export only when it also passes the export-eligibility checks. Conflicts or stale semantic review can still block export. Approval does not establish that the instruction will prevent every future recurrence.
+Rules exports start from the **privacy-reviewed/redacted baseline**, preserve unrelated reviewed content, and apply only eligible approved modifications. Removed sensitive text is never restored automatically.
 
-If the developer edits or merges a generated proposal, that change becomes stale and requires another semantic comparison before it can be approved.
-
-## Semantic recheck
-
-Developer-edited or merged proposals can trigger a targeted semantic recheck.
-
-The recheck compares the current proposal against:
-
-- the complete reviewed historical rules;
-- relevant coexisting approved proposals.
-
-This helps identify possible duplicates or conflicts introduced by manual editing.
-
-The entire original transcript is not resent for this recheck.
-
-## AI usage
-
-Prompt Autopsy uses OpenAI's Responses API with structured outputs.
-
-Current model:
-
-`gpt-5.6-sol`
-
-The AI is used for interpretation tasks such as:
-
-- grouping evidence into findings;
-- distinguishing observations from possible explanations;
-- comparing the incident semantically with historical guidance;
-- proposing narrowly scoped instruction changes.
-
-The model does not determine whether its own references are valid.
-
-Deterministic application code verifies the resulting structure and references before the investigation is accepted.
-
-## Provider and validation safeguards
-
-Prompt Autopsy uses several fail-closed checks around provider output.
-
-Examples include:
-
-- structured-output validation;
-- exact message citation verification;
-- exact rule citation verification;
-- occurrence checking;
-- proposal/finding relationship validation;
-- edit-anchor validation;
-- Unicode and CRLF boundary protection;
-- replacement length and byte limits;
-- no-op edit rejection;
-- semantic-context binding;
-- safe typed validation diagnostics.
-
-Unknown or invalid provider output is not silently repaired into an accepted investigation.
-
-## Privacy model
-
-Prompt Autopsy is designed around explicit review and consent.
-
-The application:
-
-- keeps investigation state in the current browser session;
-- does not implement recovery persistence;
-- lets the developer redact inputs before processing;
-- sends only reviewed content after explicit consent;
-- does not automatically write changes to repositories.
-
-Provider-side retention and data handling remain separate from Prompt Autopsy's own session-only storage behavior.
+Privacy review is manual; the application does not guarantee secret detection or complete anonymization. Provider-side data handling is separate from Prompt Autopsy's own non-persistence. Do not interpret session-only storage or `store: false` as an end-to-end zero-retention guarantee.
 
 ## Cost controls
 
-The app verifies input size before generation and tracks estimated AI usage within the active session.
+The current investigation has a **USD 0.40 in-session AI-generation budget**. The application reserves conservative maximum generation cost before dispatch and settles against trusted usage when available; uncertain billing retains the reservation.
 
-The current in-session AI budget is:
+- Initial investigation: maximum USD 0.250 generation reservation.
+- Targeted semantic recheck: maximum USD 0.064 generation reservation.
+- Explicit retries and rechecks share the same session ledger.
 
-`$0.40`
+Consented provider input-token counting is unbilled preprocessing and checks the complete canonical request against operation-specific limits before generation. Oversized inputs are rejected without silently truncating evidence.
 
-Investigation and semantic-recheck operations have separate input and output limits.
-
-The displayed budget is an application-level safeguard and is not an account-wide OpenAI spending limit.
-
-## Example real investigation
-
-One real test involved a browser-restoration fix that attempted to keep React-controlled form values synchronized by repeatedly writing directly to textarea DOM values.
-
-The implementation passed offline tests, typecheck, and production build checks, but hands-on browser testing found static or unresponsive controls and inconsistent transcript state.
-
-Prompt Autopsy:
-
-1. identified the imperative DOM synchronization as the central failure;
-2. linked the finding to exact transcript evidence;
-3. kept the precise browser mechanism as a possible explanation rather than a proven fact;
-4. detected that the historical `AGENTS.md` contained only unrelated generated Next.js guidance;
-5. recommended a new React-controlled-input instruction;
-6. placed the new rule outside the generated Next.js block;
-7. required developer approval before export.
-
-The resulting revised instruction emphasized React-owned controlled state, narrowly scoped browser-restoration resets, and explicit real-browser verification even after automated checks pass.
+This is a safeguard within the normal application session, **not an account-wide spending limit**. It does not prevent deliberate API replay, modified clients, or spending across separate sessions. Public deployment using a paid key requires additional abuse and account-level spending protections that are outside this MVP.
 
 ## Architecture
 
-Prompt Autopsy is a Next.js application using a server-side OpenAI adapter and deterministic domain validation.
-
-Main layers:
-
 ```text
-Browser UI
-   |
-   | reviewed inputs + explicit consent
-   v
-Next.js API routes
-   |
-   | input-size verification
-   v
-OpenAI Responses API
-   |
-   | structured output
-   v
-Schema validation
-   |
-   v
-Deterministic domain validation
-   |
-   v
-Developer review and decision
-   |
-   v
-Deterministic diff + export
+Browser: import → privacy review → explicit consent
+                         ↓
+Stateless Next.js Route Handler → OpenAI input-token count
+                         ↓
+OpenAI Responses generation → schema and domain validation
+                         ↓
+Browser: evidence review → developer decision
+                         ↓
+Deterministic diff, rules export, and Markdown report
 ```
 
-The investigation and semantic-recheck routes use separate contracts and limits.
+The investigation and semantic-recheck routes have separate contracts and limits. There is no database, source-file storage service, or automatic repository modification.
 
 ## Tech stack
 
-- Next.js 16
-- React 19
-- TypeScript
-- OpenAI Responses API
-- Zod
-- Tailwind CSS
-- Vitest
-- Testing Library
-- jsdom
-- `diff`
-- Lucide React
+- **Runtime:** Node 24.21.0
+- **Application:** Next.js 16 App Router, React 19, TypeScript
+- **UI:** Tailwind CSS and Lucide React
+- **AI and contracts:** OpenAI Responses API and Zod
+- **Verification:** Vitest, Testing Library, and jsdom
+- **Diffs:** `diff`
 
-Development runtime:
-
-`Node 24.21.0`
+Exact dependency versions are pinned in [package.json](package.json) and the lockfile.
 
 ## Running locally
 
-Install dependencies:
+Use Node **24.21.0** (`nvm use` if available), then:
 
 ```bash
 npm ci
-```
-
-Copy the environment example:
-
-```bash
 cp .env.example .env.local
 ```
 
-Add an OpenAI API key if you want to use live provider processing:
+For live investigation or semantic recheck, set your key in `.env.local`:
 
-```text
-OPENAI_API_KEY=...
+```dotenv
+OPENAI_API_KEY=your_api_key_here
 ```
 
-Start development:
+Keep the key private. Import and Privacy Review work without it; live processing requires a configured key with model access and explicit in-app consent.
 
 ```bash
 npm run dev
 ```
 
-Open:
+Open [http://localhost:3000](http://localhost:3000). Development and production builds use webpack mode.
 
-```text
-http://localhost:3000
-```
-
-The Import and Privacy Review stages can be explored without an API key.
-
-A valid API key and explicit consent are required for live investigation or semantic-recheck processing.
-
-## Development checks
-
-Run the offline test suite:
+### Development checks
 
 ```bash
 npm test
-```
-
-Typecheck:
-
-```bash
 npm run typecheck
-```
-
-Production build:
-
-```bash
 npm run build
 ```
 
-The project currently passes:
-
-- 206 offline tests;
-- TypeScript validation;
-- production webpack build.
-
-Offline tests do not make real OpenAI requests.
+Latest successful verification: **206 offline tests**, typecheck, and production webpack build. Offline tests use controlled fixtures and mocks, not real OpenAI requests. Passing them does not establish live-model consistency or replace real-browser testing.
 
 ## Transcript format
 
-Prompt Autopsy uses a deliberately explicit plain-text transcript format.
-
-Example:
+Prepare a relevant excerpt manually, preserving requirements, decisions, implementation discussion, failures, and corrections where available. Prompt Autopsy does not parse agent-specific exports.
 
 ```text
 @@MESSAGE
@@ -403,57 +195,34 @@ Describe the coding agent response here.
 @@END
 ```
 
-Supported speakers:
+Supported speakers are `developer`, `agent`, and `system`. The `original_ref` header is optional; application citations use assigned message IDs. Privacy edits preserve those IDs, and removing a message does not renumber the remaining messages.
 
-- `developer`
-- `agent`
-- `system`
-
-The Import screen also provides a fictional sample transcript.
-
-Fictional fixtures should not be presented as recovered or real coding-session evidence.
+See the [complete grammar and escaping rules](devpost/transcript-format.md) and [fictional sample transcript](public/samples/transcript.txt). Fictional fixtures must not be presented as recovered or real coding-session evidence. Supply the historical rules appropriate to the incident; this repository's own generated instructions are not automatically the historical rules for the fictional sample.
 
 ## Current limitations
 
-Prompt Autopsy currently focuses on one coding incident at a time.
-
-Other limitations include:
-
-- manually prepared transcript excerpts;
-- no automatic repository-history reconstruction;
-- no automatic retrieval of commit diffs or browser logs;
-- no guarantee that an uploaded historical instruction file was actually loaded by the coding agent;
-- AI findings remain interpretations of supplied evidence;
-- approved instructions are not guarantees against future failures;
-- current-session state is not recoverable after the session is discarded;
-- public deployment with a paid provider key would require additional abuse and account-level spending controls.
+- One incident, one session excerpt, and one historical rules file per investigation.
+- No automatic retrieval of repository history, commit diffs, or browser logs.
+- No proof that supplied historical instructions were loaded or followed by an agent.
+- AI findings remain interpretations of supplied evidence; selected excerpts may omit important context.
+- No autonomous execution or guarantee that approved instructions prevent future failures.
+- No recovery after the session is discarded.
+- Public deployment requires additional abuse/spend protections.
 
 ## What I learned
 
-Building Prompt Autopsy changed how I think about using AI for developer tooling.
+Building Prompt Autopsy taught me that **structured AI output is not automatically verified output**. Valid JSON can still contain invalid evidence references, inconsistent proposal relationships, or edit targets that do not match the reviewed source.
 
-The main lesson was that structured model output is not enough by itself.
+That led me to separate interpretation from deterministic checks and developer decisions. I also learned that automated tests do not establish real-browser behaviour: one incident used during development passed offline tests, typecheck, and build before a regression was found through hands-on testing.
 
-A response can be valid JSON and still contain invalid evidence references, inconsistent proposal relationships, or edit targets that do not match the reviewed source material.
+Uncertainty should be represented explicitly rather than hidden. Sometimes a new instruction is justified; sometimes the right outcome is no change or a request for more evidence.
 
-That led to an architecture where the model is responsible for interpretation but deterministic application code verifies what can actually be verified.
-
-I also learned that successful automated checks do not replace hands-on browser verification. One of the real incidents used to test Prompt Autopsy passed offline tests, typecheck, and production build before a browser-level regression was discovered.
-
-The project therefore treats uncertainty as part of the result rather than something the model should hide.
-
-Sometimes the correct outcome is a new instruction.
-
-Sometimes it is no change.
-
-Sometimes it is simply: more evidence is required.
+> AI interprets. Application code verifies. Developer decides.
 
 ## Repository
 
-Public repository:
-
-`https://github.com/Ajayfrizzy/prompt-autopsy`
+[github.com/Ajayfrizzy/prompt-autopsy](https://github.com/Ajayfrizzy/prompt-autopsy)
 
 ## Demo
 
-Demo video: **Add final demo link before submission.**
+**Placeholder: add the final demo-video link before submission.**
