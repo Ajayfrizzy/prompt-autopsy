@@ -734,6 +734,190 @@ mark {
 .diff .unchanged {
   color: #8ca0b9;
 }
+/* Results-only demo readability: preserve import/privacy sizing and behavior. */
+.results-workspace .results-toolbar {
+  margin-bottom: 16px;
+}
+.results-workspace .stack {
+  gap: 16px;
+}
+.investigation-summary {
+  padding: 16px 18px;
+  border-top: 2px solid #527dae;
+}
+.investigation-summary > p {
+  margin: 6px 0;
+}
+.investigation-summary > p:not(.eyebrow):not(.hint) {
+  font-size: 15px;
+  line-height: 1.55;
+}
+.investigation-summary .eyebrow {
+  font-size: 11px;
+}
+.results-workspace .hint {
+  font-size: 12px;
+  line-height: 1.55;
+}
+.finding {
+  padding: 18px;
+}
+.finding h2 {
+  font-size: 18px;
+  line-height: 1.4;
+  margin: 12px 0;
+}
+.finding .observation,
+.finding .hypothesis,
+.finding .rule-comparison {
+  font-size: 14px;
+  line-height: 1.55;
+  padding: 10px 12px;
+  margin: 10px 0 0;
+  border: 1px solid #29394c;
+  border-left: 3px solid #729f8a;
+  border-radius: 5px;
+  background: #101e25;
+}
+.finding h3 {
+  font-size: 13px;
+  letter-spacing: 0.1px;
+  margin: 0 0 5px;
+}
+.finding p {
+  margin: 5px 0;
+}
+.finding .documented-requirement {
+  border-left-color: #8db8ef;
+  background: #142235;
+}
+.finding .documented-requirement h3 {
+  color: #bdd6f5;
+}
+.finding .hypothesis {
+  border-left-color: #c3a570;
+  background: #252218;
+}
+.finding .missing-evidence {
+  border-style: dashed;
+  border-left-style: solid;
+  background: #231c25;
+  border-left-color: #cda6c8;
+}
+.finding .missing-evidence h3 {
+  color: #e4bddf;
+}
+.finding .rule-comparison {
+  border-left-color: #969ac8;
+  background: #1b2030;
+}
+.results-workspace .source-link {
+  font-size: 12px;
+  padding: 3px 7px;
+}
+.timeline-event {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.timeline-event .eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.5px;
+}
+.inspector pre {
+  font-size: 12px;
+  line-height: 1.6;
+}
+.results-workspace .inspector .message {
+  padding: 12px;
+}
+.decision-detail > h2 {
+  font-size: 20px;
+  line-height: 1.4;
+  margin: 8px 0;
+}
+.decision-detail > p {
+  font-size: 14px;
+  line-height: 1.55;
+  margin: 10px 0;
+}
+.proposal .compare-grid {
+  gap: 14px;
+  margin: 14px 0;
+}
+.proposal .proposed-revision {
+  border-color: #6997ca;
+  background: #142439;
+  box-shadow: inset 0 2px #6997ca;
+}
+.proposed-revision h3 {
+  color: #c7e0ff;
+  font-size: 15px;
+}
+.proposed-revision textarea {
+  font-size: 14px;
+  line-height: 1.6;
+}
+.decision-status {
+  font-size: 13px;
+  padding: 12px 15px;
+  margin-bottom: 14px;
+}
+.proposal .actions,
+.no-change .actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.final-preview {
+  margin-top: 18px;
+  border-color: #406552;
+}
+.final-preview > .between > .badge {
+  font-size: 13px;
+  color: #c8f1d9;
+  border-color: #4b775e;
+  background: #183225;
+}
+.final-preview .summary-cards {
+  margin: 14px 0;
+}
+.final-preview .summary-cards > div {
+  padding: 9px 12px;
+  font-size: 12px;
+}
+.final-preview .summary-cards strong {
+  font-size: 22px;
+}
+.final-preview .diff-legend {
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 10px 0;
+  font-size: 12px;
+}
+.final-preview .diff {
+  border-color: #49755c;
+}
+.final-preview .diff-header {
+  font-size: 13px;
+  padding: 8px 12px;
+}
+.final-preview .diff pre {
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 7px 12px;
+}
+.final-preview .diff .added {
+  border-left: 3px solid #84d7a3;
+  background: #173d2b;
+  color: #d2f7df;
+}
+.final-preview .spaced {
+  margin-top: 16px;
+}
+.final-preview > .actions {
+  margin-top: 14px;
+}
 .excluded {
   font-size: 12px;
   color: var(--muted);

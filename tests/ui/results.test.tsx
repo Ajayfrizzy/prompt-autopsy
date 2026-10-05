@@ -60,7 +60,7 @@ function findingOutput(noChange = false): AnalysisWire {
               "The transcript does not establish the agent's internal reasoning.",
           },
         ],
-        missingEvidence: [],
+        missingEvidence: ["Independent browser verification is not supplied."],
         comparisons: noChange
           ? [
               {
@@ -204,6 +204,18 @@ async function investigate(noChange = false) {
 describe("evidence, decisions and exports", () => {
   it("links exact reviewed evidence and exports only an explicitly approved revision", async () => {
     await investigate();
+    expect(screen.getByText("INVESTIGATION SUMMARY")).toBeInTheDocument();
+    for (const name of [
+      "Documented requirement",
+      "Observed",
+      "Possible explanation",
+      "Evidence still needed",
+      "Historical instruction comparison",
+    ])
+      expect(screen.getByRole("heading", { name })).toBeInTheDocument();
+    expect(
+      screen.getByText("Independent browser verification is not supplied."),
+    ).toBeInTheDocument();
     expect(screen.getByText("EVIDENCE SUPPORTED")).toBeInTheDocument();
     expect(
       screen.getByRole("heading", { name: "Possible explanation" }),

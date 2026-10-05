@@ -160,7 +160,7 @@ export function Results() {
     send({ type: "stage", stage: 1 });
   }
   return (
-    <>
+    <div className="results-workspace">
       <div className="between results-toolbar">
         <div>
           <span className="badge">{review.findings.length} FINDINGS</span>{" "}
@@ -226,7 +226,7 @@ export function Results() {
             )}
           </aside>
           <section className="stack">
-            <div className="panel">
+            <div className="panel investigation-summary">
               <p className="eyebrow">INVESTIGATION SUMMARY</p>
               <p>{review.analysis.summary}</p>
               {review.analysis.limitations.map((l, i) => (
@@ -258,7 +258,7 @@ export function Results() {
                 </div>
                 <h2>{f.source.title}</h2>
                 {f.source.documentedRequirement && (
-                  <div className="observation">
+                  <div className="observation documented-requirement">
                     <h3>Documented requirement</h3>
                     <p>{f.source.documentedRequirement.text}</p>
                     {refs(f.source.documentedRequirement.evidence)}
@@ -280,7 +280,7 @@ export function Results() {
                   </div>
                 ))}
                 {f.source.missingEvidence.length > 0 && (
-                  <div className="hypothesis">
+                  <div className="hypothesis missing-evidence">
                     <h3>Evidence still needed</h3>
                     {f.source.missingEvidence.map((e, i) => (
                       <p key={i}>{e}</p>
@@ -390,7 +390,7 @@ export function Results() {
             </aside>
             <section className="stack">
               {selected && (
-                <article className="panel">
+                <article className="panel decision-detail">
                   <span className="badge">
                     {selected.source.recommendation.replaceAll("_", " ")}
                   </span>
@@ -429,7 +429,7 @@ export function Results() {
                               Range {p.current.start}–{p.current.end}
                             </p>
                           </div>
-                          <div>
+                          <div className="proposed-revision">
                             <h3>Proposed revision</h3>
                             <textarea
                               className="code"
@@ -968,7 +968,7 @@ export function Results() {
           </section>
         </>
       )}
-    </>
+    </div>
   );
 }
 function Highlighted({
