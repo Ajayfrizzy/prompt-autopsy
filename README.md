@@ -225,4 +225,4 @@ Uncertainty should be represented explicitly rather than hidden. Sometimes a new
 
 ## Demo
 
-**Placeholder: add the final demo-video link before submission.**
+[Watch the Prompt Autopsy demo](https://youtu.be/M6Ee0bA0YuA)
